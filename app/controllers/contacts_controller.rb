@@ -1,0 +1,96 @@
+class ContactsController < ApplicationController
+  before_action :set_contact, only: %i[ show update destroy merge add_note ]
+
+  # GET /contacts
+  def index
+    @contacts = Contact.all
+
+    render json: @contacts
+  end
+
+  # GET /contacts/1
+  def show
+    render json: @contact.as_json(include: {
+      conversations: {
+        include: :messages
+      },
+      notes: {
+        include: :user
+      }
+    })
+  end
+
+  # POST /contacts
+  def create
+    @contact = Contact.new(contact_params)
+
+    if @contact.save
+      render json: @contact, status: :created, location: @contact
+    else
+      render json: @contact.errors, status: :unprocessable_content
+    end
+  end
+
+  # PATCH/PUT /contacts/1
+  def update
+    if @contact.update(contact_params)
+      render json: @contact
+    else
+      render json: @contact.errors, status: :unprocessable_content
+    end
+  end
+
+  # DELETE /contacts/1
+  def destroy
+    @contact.destroy!
+    head :no_content
+  end
+
+  # POST /contacts/1/merge
+  def merge
+    target_contact = Contact.find_by(id: params[:target_contact_id])
+    if target_contact.nil? || target_contact.id == @contact.id
+      return render json: { error: 'Invalid target contact' }, status: :unprocessable_entity
+    end
+
+    ActiveRecord::Base.transaction do
+      @contact.conversations.update_all(contact_id: target_contact.id)
+      @contact.destroy!
+    end
+
+    render json: { message: 'Contacts merged successfully', contact: target_contact }
+  end
+
+  # POST /contacts/1/add_note
+  def add_note
+    note = @contact.notes.new(content: params[:content])
+    note.account_id = @contact.account_id
+    note.user_id = current_user.id if respond_to?(:current_user) && current_user
+    
+    # Just in case we don't have current_user properly mapped yet
+    note.user_id ||= User.first.id
+
+    if note.save
+      render json: note.as_json(include: :user), status: :created
+    else
+      render json: note.errors, status: :unprocessable_entity
+    end
+  end
+
+  private
+    # Use callbacks to share common setup or constraints between actions.
+    def set_contact
+      @contact = Contact.find(params.expect(:id))
+    end
+
+    # Only allow a list of trusted parameters through.
+    def contact_params
+      params.require(:contact).permit(
+      :name, :email, :phone, :jid, :avatar_url, :status, :account_id, 
+      :first_name, :last_name, :city, :country, :bio, :company_name, 
+      :temperature, :source, :intention,
+      :cpf, :birth_date, :profession, :gross_income, :down_payment, :fgts_balance, :dependents,
+      :cep, :street, :neighborhood, :state, :address_number, :address_complement
+    )
+    end
+end
