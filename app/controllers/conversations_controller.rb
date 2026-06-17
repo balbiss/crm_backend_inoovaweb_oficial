@@ -3,37 +3,82 @@ class ConversationsController < ApplicationController
 
   def index
     # Load all conversations for the user's account
-    conversations = current_user.account.conversations.includes(:contact, :user, :messages)
+    conversations = current_user.account.conversations.includes(:user, messages: { attachment_attachment: :blob }, contact: { notes: :user })
+    users_hash = User.where(account_id: current_user.account_id).index_by(&:id)
     
-    render json: conversations.map { |conv| format_conversation(conv) }
+    render json: conversations.map { |conv| format_conversation(conv, users_hash) }
   end
 
   def show
-    conversation = current_user.account.conversations.includes(:contact, :user, :messages).find(params[:id])
-    render json: format_conversation(conversation)
+    conversation = current_user.account.conversations.includes(:user, messages: { attachment_attachment: :blob }, contact: { notes: :user }).find(params[:id])
+    users_hash = User.where(account_id: current_user.account_id).index_by(&:id)
+    render json: format_conversation(conversation, users_hash)
   end
 
   def update
     conversation = current_user.account.conversations.find(params[:id])
+    users_hash = User.where(account_id: current_user.account_id).index_by(&:id)
     if conversation.update(conversation_params)
       # Broadcast status update if needed (optional for now, as frontend will update locally)
       ActionCable.server.broadcast("conversations_channel", {
         event: 'conversation_updated',
-        conversation: format_conversation(conversation)
+        conversation: format_conversation(conversation, users_hash)
       })
-      render json: format_conversation(conversation)
+      render json: format_conversation(conversation, users_hash)
     else
       render json: { errors: conversation.errors.full_messages }, status: :unprocessable_entity
+    end
+  end
+
+  def generate_summary
+    conversation = current_user.account.conversations.includes(:messages).find(params[:id])
+    
+    recent_messages = conversation.messages.order(created_at: :asc).last(30)
+    
+    chat_history = recent_messages.map do |msg|
+      "#{msg.sender_type == 'Contact' ? 'Cliente' : 'Corretor/IA'}: #{msg.text || '[Mídia]'}"
+    end.join("\n")
+
+    system_prompt = <<~PROMPT
+      Você é um assistente de imobiliária. Seu objetivo é ler o histórico da conversa abaixo e gerar um resumo curto, direto e objetivo do atendimento.
+      Destaque as principais informações como:
+      - O que o cliente busca (imóvel/perfil)
+      - Faixa de valor
+      - Região de interesse
+      - Próximos passos combinados
+      Não crie informações que não estejam no texto. Retorne apenas o resumo.
+    PROMPT
+
+    begin
+      api_key = GlobalSetting.find_by(key: 'openai_api_key')&.value.presence || ENV['OPENAI_API_KEY']
+      client = OpenAI::Client.new(access_token: api_key)
+      
+      response = client.chat(
+        parameters: {
+          model: "gpt-4o-mini",
+          messages: [
+            { role: "system", content: system_prompt },
+            { role: "user", content: "Histórico:\n#{chat_history}" }
+          ],
+          temperature: 0.3
+        }
+      )
+      
+      summary = response.dig("choices", 0, "message", "content")
+      render json: { summary: summary }
+    rescue StandardError => e
+      Rails.logger.error("Error generating summary: \#{e.message}")
+      render json: { error: "Erro ao gerar resumo." }, status: :unprocessable_entity
     end
   end
 
   private
 
   def conversation_params
-    params.require(:conversation).permit(:status)
+    params.require(:conversation).permit(:status, :user_id)
   end
 
-  def format_conversation(conv)
+  def format_conversation(conv, users_hash = {})
     last_message = conv.messages.order(created_at: :asc).last
 
     {
@@ -64,7 +109,15 @@ class ConversationsController < ApplicationController
         neighborhood: conv.contact.neighborhood,
         state: conv.contact.state,
         address_number: conv.contact.address_number,
-        address_complement: conv.contact.address_complement
+        address_complement: conv.contact.address_complement,
+        notes: conv.contact.notes.order(created_at: :desc).map do |n|
+          {
+            id: n.id,
+            content: n.content,
+            created_at: n.created_at,
+            author: n.user&.first_name || 'Sistema'
+          }
+        end
       },
       inbox_id: conv.inbox_id,
       source: conv.source || 'whatsapp',
@@ -78,13 +131,14 @@ class ConversationsController < ApplicationController
           text: msg.text,
           timestamp: msg.created_at.iso8601,
           status: msg.status,
-          agentName: msg.sender_type == 'User' ? User.find_by(id: msg.sender_id)&.first_name : nil,
+          agentName: msg.sender_type == 'User' ? (users_hash[msg.sender_id]&.first_name || User.find_by(id: msg.sender_id)&.first_name) : nil,
           isPrivate: msg.is_private,
           attachmentUrl: msg.attachment.attached? ? Rails.application.routes.url_helpers.rails_blob_url(msg.attachment, host: ENV['API_HOST'] || 'http://localhost:3000') : nil,
           attachmentType: msg.attachment.attached? ? msg.attachment.content_type : nil
         }
       end.map { |m| m[:senderType] == 'user' ? m.merge(senderType: 'agent') : m },
       assignee: conv.user&.first_name,
+      assignee_id: conv.user_id,
       status: conv.status
     }
   end

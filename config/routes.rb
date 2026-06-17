@@ -2,16 +2,27 @@ Rails.application.routes.draw do
   resources :properties
   resources :condominiums
   resources :appointments
+  resources :agents do
+    member do
+      patch :block
+      patch :unblock
+    end
+  end
   resources :contacts do
     member do
       post :merge
       post :add_note
     end
   end
+  resources :tags
   get 'dashboard', to: 'dashboard#index'
   
   resources :conversations, only: [:index, :show, :update] do
     resources :messages, only: [:index, :create]
+    resources :scheduled_messages, only: [:index, :create, :destroy]
+    member do
+      post :generate_summary
+    end
   end
 
   resources :support_tickets, only: [:index, :show, :create] do
@@ -32,9 +43,11 @@ Rails.application.routes.draw do
   end
 
   resources :inboxes do
+    resources :members, controller: 'inbox_members', only: [:index, :create, :destroy]
     member do
       get :qr_code
       get :status
+      post :generate_prompt
     end
   end
   

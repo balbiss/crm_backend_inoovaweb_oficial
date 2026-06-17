@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_15_063647) do
+ActiveRecord::Schema[8.1].define(version: 2026_06_17_000504) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -63,9 +63,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_15_063647) do
     t.string "start_time"
     t.string "status"
     t.datetime "updated_at", null: false
+    t.bigint "user_id"
     t.index ["account_id"], name: "index_appointments_on_account_id"
     t.index ["contact_id"], name: "index_appointments_on_contact_id"
     t.index ["property_id"], name: "index_appointments_on_property_id"
+    t.index ["user_id"], name: "index_appointments_on_user_id"
   end
 
   create_table "condominia", force: :cascade do |t|
@@ -125,6 +127,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_15_063647) do
     t.string "country"
     t.string "cpf"
     t.datetime "created_at", null: false
+    t.jsonb "custom_attributes", default: {}
     t.integer "dependents"
     t.decimal "down_payment"
     t.string "email"
@@ -144,14 +147,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_15_063647) do
     t.string "street"
     t.string "temperature"
     t.datetime "updated_at", null: false
+    t.bigint "user_id"
     t.index ["account_id"], name: "index_contacts_on_account_id"
+    t.index ["phone"], name: "index_contacts_on_phone"
+    t.index ["user_id"], name: "index_contacts_on_user_id"
   end
 
   create_table "conversations", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.bigint "contact_id", null: false
     t.datetime "created_at", null: false
+    t.integer "followup_count", default: 0
     t.bigint "inbox_id"
+    t.datetime "last_activity_at"
     t.string "source"
     t.integer "status", default: 0
     t.integer "unread_count", default: 0
@@ -160,6 +168,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_15_063647) do
     t.index ["account_id"], name: "index_conversations_on_account_id"
     t.index ["contact_id"], name: "index_conversations_on_contact_id"
     t.index ["inbox_id"], name: "index_conversations_on_inbox_id"
+    t.index ["status"], name: "index_conversations_on_status"
     t.index ["user_id"], name: "index_conversations_on_user_id"
   end
 
@@ -171,14 +180,38 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_15_063647) do
     t.index ["key"], name: "index_global_settings_on_key", unique: true
   end
 
+  create_table "inbox_members", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "inbox_id", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["inbox_id", "user_id"], name: "index_inbox_members_on_inbox_id_and_user_id", unique: true
+    t.index ["inbox_id"], name: "index_inbox_members_on_inbox_id"
+    t.index ["user_id"], name: "index_inbox_members_on_user_id"
+  end
+
   create_table "inboxes", force: :cascade do |t|
+    t.boolean "ai_enabled", default: false
+    t.string "ai_name"
+    t.text "ai_prompt"
+    t.float "ai_temperature", default: 0.7
     t.string "api_key"
     t.string "api_url"
+    t.text "bot_prompt"
     t.datetime "created_at", null: false
+    t.text "followup_closing_message"
+    t.boolean "followup_enabled", default: false
+    t.integer "followup_max_attempts", default: 3
+    t.boolean "followup_send_closing_message", default: false
+    t.integer "followup_wait_time_minutes", default: 120
     t.string "name"
+    t.text "out_of_office_message"
     t.string "phone_number"
     t.string "provider"
     t.datetime "updated_at", null: false
+    t.jsonb "working_hours", default: []
+    t.boolean "working_hours_enabled", default: false
+    t.index ["phone_number"], name: "index_inboxes_on_phone_number"
   end
 
   create_table "messages", force: :cascade do |t|
@@ -194,6 +227,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_15_063647) do
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_messages_on_account_id"
     t.index ["conversation_id"], name: "index_messages_on_conversation_id"
+    t.index ["sender_type", "sender_id"], name: "index_messages_on_sender_type_and_sender_id"
+    t.index ["source_id"], name: "index_messages_on_source_id"
   end
 
   create_table "notes", force: :cascade do |t|
@@ -261,7 +296,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_15_063647) do
     t.integer "total_area"
     t.datetime "updated_at", null: false
     t.string "usage_type"
+    t.bigint "user_id"
     t.index ["account_id"], name: "index_properties_on_account_id"
+    t.index ["user_id"], name: "index_properties_on_user_id"
+  end
+
+  create_table "scheduled_messages", force: :cascade do |t|
+    t.bigint "conversation_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "send_at"
+    t.string "status", default: "pending"
+    t.text "text"
+    t.datetime "updated_at", null: false
+    t.index ["conversation_id"], name: "index_scheduled_messages_on_conversation_id"
   end
 
   create_table "support_ticket_messages", force: :cascade do |t|
@@ -283,6 +330,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_15_063647) do
     t.index ["account_id"], name: "index_support_tickets_on_account_id"
   end
 
+  create_table "tags", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "color", default: "#6b7280"
+    t.datetime "created_at", null: false
+    t.string "name", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "name"], name: "index_tags_on_account_id_and_name", unique: true
+    t.index ["account_id"], name: "index_tags_on_account_id"
+  end
+
   create_table "users", force: :cascade do |t|
     t.bigint "account_id"
     t.datetime "created_at", null: false
@@ -291,10 +348,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_15_063647) do
     t.string "first_name"
     t.string "jti"
     t.string "last_name"
+    t.jsonb "permissions", default: {}
+    t.string "phone"
     t.datetime "remember_created_at"
     t.datetime "reset_password_sent_at"
     t.string "reset_password_token"
     t.integer "role"
+    t.string "status", default: "active"
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_users_on_account_id"
     t.index ["email"], name: "index_users_on_email", unique: true
@@ -307,12 +367,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_15_063647) do
   add_foreign_key "appointments", "accounts"
   add_foreign_key "appointments", "contacts"
   add_foreign_key "appointments", "properties"
+  add_foreign_key "appointments", "users"
   add_foreign_key "condominia", "accounts"
   add_foreign_key "contacts", "accounts"
+  add_foreign_key "contacts", "users"
   add_foreign_key "conversations", "accounts"
   add_foreign_key "conversations", "contacts"
   add_foreign_key "conversations", "inboxes"
   add_foreign_key "conversations", "users"
+  add_foreign_key "inbox_members", "inboxes"
+  add_foreign_key "inbox_members", "users"
   add_foreign_key "messages", "accounts"
   add_foreign_key "messages", "conversations"
   add_foreign_key "notes", "accounts"
@@ -320,7 +384,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_15_063647) do
   add_foreign_key "notes", "users"
   add_foreign_key "notifications", "accounts"
   add_foreign_key "properties", "accounts"
+  add_foreign_key "properties", "users"
+  add_foreign_key "scheduled_messages", "conversations"
   add_foreign_key "support_ticket_messages", "support_tickets"
   add_foreign_key "support_ticket_messages", "users"
   add_foreign_key "support_tickets", "accounts"
+  add_foreign_key "tags", "accounts"
 end

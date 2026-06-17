@@ -9,8 +9,13 @@ class Message < ApplicationRecord
   # sender_id will be the id of the User or Contact
 
   after_create_commit :broadcast_to_conversation
+  after_create_commit :update_conversation_activity
 
   private
+
+  def update_conversation_activity
+    conversation.update_column(:last_activity_at, Time.current)
+  end
 
   def broadcast_to_conversation
     message_payload = {

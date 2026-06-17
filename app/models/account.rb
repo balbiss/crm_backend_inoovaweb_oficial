@@ -5,6 +5,7 @@ class Account < ApplicationRecord
   has_many :properties, dependent: :destroy
   has_many :support_tickets, dependent: :destroy
   has_many :notifications, dependent: :destroy
+  has_many :tags, dependent: :destroy
 
   before_create :set_trial_period
 

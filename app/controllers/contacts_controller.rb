@@ -3,13 +3,18 @@ class ContactsController < ApplicationController
 
   # GET /contacts
   def index
-    @contacts = Contact.all
+    if current_user&.role == 'admin' || current_user&.role == 'empresa' || current_user&.permissions&.dig('view_all_contacts')
+      @contacts = Contact.all
+    else
+      @contacts = Contact.where(user_id: current_user.id)
+    end
 
     render json: @contacts
   end
 
   # GET /contacts/1
   def show
+    @contact = Contact.includes(conversations: :messages, notes: :user).find(@contact.id)
     render json: @contact.as_json(include: {
       conversations: {
         include: :messages
@@ -23,6 +28,7 @@ class ContactsController < ApplicationController
   # POST /contacts
   def create
     @contact = Contact.new(contact_params)
+    @contact.user_id ||= current_user.id
 
     if @contact.save
       render json: @contact, status: :created, location: @contact
@@ -90,7 +96,8 @@ class ContactsController < ApplicationController
       :first_name, :last_name, :city, :country, :bio, :company_name, 
       :temperature, :source, :intention,
       :cpf, :birth_date, :profession, :gross_income, :down_payment, :fgts_balance, :dependents,
-      :cep, :street, :neighborhood, :state, :address_number, :address_complement
+      :cep, :street, :neighborhood, :state, :address_number, :address_complement,
+      custom_attributes: {}
     )
     end
 end

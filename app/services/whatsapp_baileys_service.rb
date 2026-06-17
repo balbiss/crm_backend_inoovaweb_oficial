@@ -66,7 +66,7 @@ class WhatsappBaileysService
       "messageContent" => {}
     }
 
-    if attachment.present? && attachment.attached?
+    if attachment.present?
       content_type = attachment.content_type
       base64_data = Base64.strict_encode64(attachment.download)
 
@@ -102,6 +102,41 @@ class WhatsappBaileysService
     Rails.logger.info("Baileys send_message response code: #{response.code}, body: #{response.body}")
     puts "Baileys API Response: #{response.body}" # Imprime no console também para o rails runner
     response.is_a?(Net::HTTPSuccess)
+  end
+
+  def send_presence_update(recipient_phone, presence = 'composing')
+    jid = recipient_phone
+    unless jid.include?('@')
+      jid = "#{jid.delete('+')}@s.whatsapp.net"
+    end
+
+    uri = URI.parse("#{@api_url}/connections/#{@phone_number}/presence")
+    request = Net::HTTP::Post.new(uri)
+    request.content_type = "application/json"
+    request["x-api-key"] = @api_key
+    
+    # "composing", "recording", "paused"
+    payload = {
+      "jid" => jid,
+      "presence" => presence
+    }
+    
+    request.body = JSON.dump(payload)
+
+    req_options = {
+      use_ssl: uri.scheme == "https",
+      open_timeout: 5,
+      read_timeout: 10
+    }
+
+    response = Net::HTTP.start(uri.hostname, uri.port, req_options) do |http|
+      http.request(request)
+    end
+    
+    response.is_a?(Net::HTTPSuccess)
+  rescue StandardError => e
+    Rails.logger.error("Baileys send_presence_update error: #{e.message}")
+    false
   end
 
   def fetch_profile_picture_url(jid)

@@ -3,7 +3,13 @@ class User < ApplicationRecord
 
   belongs_to :account, optional: true
 
+  has_many :support_tickets
   has_many :support_ticket_messages
+  has_many :contacts
+  has_many :properties
+  has_many :appointments
+  has_many :inbox_members, dependent: :destroy
+  has_many :assigned_inboxes, through: :inbox_members, source: :inbox
 
   # Include default devise modules. Others available are:
   # :confirmable, :lockable, :timeoutable, :trackable and :omniauthable
@@ -12,4 +18,16 @@ class User < ApplicationRecord
          :jwt_authenticatable, jwt_revocation_strategy: self
 
   enum :role, { atendente: 0, empresa: 1, admin: 2 }
+  def active_for_authentication?
+    super && status == 'active'
+  end
+
+  def inactive_message
+    status == 'active' ? super : :account_inactive
+  end
+
+  # Helpers for permissions JSON
+  def has_permission?(key)
+    permissions.present? && permissions[key.to_s] == true
+  end
 end

@@ -3,7 +3,11 @@ class PropertiesController < ApplicationController
 
   # GET /properties
   def index
-    @properties = current_user.account.properties.with_attached_photos.order(created_at: :desc)
+    if current_user&.role == 'admin' || current_user&.role == 'empresa' || current_user&.permissions&.dig('view_all_properties')
+      @properties = Property.with_attached_photos.all
+    else
+      @properties = Property.with_attached_photos.where(user_id: current_user.id)
+    end
     render json: @properties.as_json(methods: [:photo_urls])
   end
 
@@ -14,7 +18,9 @@ class PropertiesController < ApplicationController
 
   # POST /properties
   def create
-    @property = current_user.account.properties.build(property_params)
+    @property = Property.new(property_params)
+    @property.user_id ||= current_user.id
+    @property.account_id ||= current_user.account_id
     
     if params[:photos]
       params[:photos].each do |photo|

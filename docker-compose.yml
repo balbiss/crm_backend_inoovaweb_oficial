@@ -32,6 +32,21 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: bash -c "bundle install && bundle exec rails jobs:work"
+    volumes:
+      - .:/rails
+      - bundle_data:/usr/local/bundle
+    environment:
+      - DATABASE_URL=postgres://postgres:password@db:5432/crm_backend_development
+      - RAILS_ENV=development
+    depends_on:
+      - db
+      - redis
+
   redis:
     image: redis:7-alpine
     ports:

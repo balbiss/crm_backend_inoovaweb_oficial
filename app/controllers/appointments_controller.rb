@@ -3,7 +3,11 @@ class AppointmentsController < ApplicationController
 
   # GET /appointments
   def index
-    @appointments = Appointment.includes(:contact, :property).all
+    if current_user&.role == 'admin' || current_user&.role == 'empresa' || current_user&.permissions&.dig('view_all_appointments')
+      @appointments = Appointment.includes(:contact, :property).all
+    else
+      @appointments = Appointment.includes(:contact, :property).where(user_id: current_user.id)
+    end
     
     render json: @appointments.as_json(include: {
       contact: { only: [:name, :phone] },
@@ -26,6 +30,7 @@ class AppointmentsController < ApplicationController
     
     @appointment = Appointment.new(appointment_params)
     @appointment.account_id ||= account.id
+    @appointment.user_id ||= current_user.id
 
     if @appointment.save
       render json: @appointment, status: :created, location: @appointment
