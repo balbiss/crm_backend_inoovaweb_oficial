@@ -46,5 +46,13 @@ class RoundRobinAssignmentService
         assignee: agent.first_name
       }
     })
+
+    ActionCable.server.broadcast('conversations_channel', {
+      event: 'lead_atribuido',
+      assigned_to_user_id: agent.id,
+      conversation_id: conversation.id,
+      contact_name: conversation.contact.name.presence || conversation.contact.phone,
+      assigned_by: 'rodizio'
+    })
   end
 end

@@ -24,6 +24,18 @@ class ConversationsController < ApplicationController
     if conversation.update(conversation_params)
       new_user_id = conversation.user_id
       if new_user_id != old_user_id
+        # Notifica o atendente que recebeu o lead
+        if new_user_id.present?
+          new_agent = users_hash[new_user_id]
+          ActionCable.server.broadcast('conversations_channel', {
+            event: 'lead_atribuido',
+            assigned_to_user_id: new_user_id,
+            conversation_id: conversation.id,
+            contact_name: conversation.contact.name.presence || conversation.contact.phone,
+            assigned_by: 'manual'
+          })
+        end
+
         tag = current_user.account.tags.find_or_create_by!(name: 'com_atendente') { |t| t.color = '#8b5cf6' }
         if new_user_id.present?
           unless conversation.tags.any? { |t| t.id == tag.id }
