@@ -358,12 +358,14 @@ class AiAssistantService
         status: 'visit',
         intention: property_desc
       )
-      
+
+      execute_tool('apply_label', { 'label' => 'visita_agendada', 'reason' => 'Visita agendada pela IA' })
+
       "Visita agendada com sucesso para #{args['date']} às #{args['time']} no imóvel ID #{args['property_id']}. O contato foi movido para 'Visita Agendada' no Kanban automaticamente."
 
     when "apply_label"
       label_name = args['label'].to_s.strip.downcase
-      colors = { 'lead_quente' => '#ef4444', 'lead_frio' => '#3b82f6', 'desqualificado' => '#6b7280', 'com_atendente' => '#8b5cf6' }
+      colors = { 'lead_quente' => '#ef4444', 'lead_frio' => '#3b82f6', 'desqualificado' => '#6b7280', 'com_atendente' => '#8b5cf6', 'visita_agendada' => '#10b981' }
       color = colors[label_name] || '#6b7280'
 
       # Remove etiquetas conflitantes antes de aplicar
