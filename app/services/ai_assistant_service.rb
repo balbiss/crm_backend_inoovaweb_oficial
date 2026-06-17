@@ -222,13 +222,13 @@ class AiAssistantService
       type: "function",
       function: {
         name: "apply_label",
-        description: "Aplica uma etiqueta na conversa para identificar a situação do lead. Use SEMPRE que identificar claramente a situação. Regras: 'lead_quente' quando o lead demonstra interesse real e urgência em comprar/alugar; 'lead_frio' quando o lead está apenas pesquisando sem intenção clara; 'desqualificado' quando o lead não tem perfil (sem condições financeiras, fora da região, etc). Não use 'agente_off' — ela é aplicada automaticamente pelo sistema.",
+        description: "Aplica uma etiqueta na conversa para identificar a situação do lead. Use SEMPRE que identificar claramente a situação. Regras: 'lead_quente' = interesse real e urgência; 'lead_frio' = só pesquisando; 'desqualificado' = fora do perfil; 'com_atendente' = use quando o lead pede para falar com um humano ou a situação exige atendimento especializado (ex: negociação de proposta complexa, reclamação, solicitação explícita). Não use 'agente_off' — ela é aplicada automaticamente.",
         parameters: {
           type: "object",
           properties: {
             label: {
               type: "string",
-              enum: ["lead_quente", "lead_frio", "desqualificado"],
+              enum: ["lead_quente", "lead_frio", "desqualificado", "com_atendente"],
               description: "Etiqueta a aplicar na conversa."
             },
             reason: {
@@ -363,7 +363,7 @@ class AiAssistantService
 
     when "apply_label"
       label_name = args['label'].to_s.strip.downcase
-      colors = { 'lead_quente' => '#ef4444', 'lead_frio' => '#3b82f6', 'desqualificado' => '#6b7280' }
+      colors = { 'lead_quente' => '#ef4444', 'lead_frio' => '#3b82f6', 'desqualificado' => '#6b7280', 'com_atendente' => '#8b5cf6' }
       color = colors[label_name] || '#6b7280'
 
       # Remove etiquetas conflitantes antes de aplicar

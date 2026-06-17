@@ -18,8 +18,25 @@ class ConversationsController < ApplicationController
   def update
     conversation = current_user.account.conversations.find(params[:id])
     users_hash = User.where(account_id: current_user.account_id).index_by(&:id)
+    old_user_id = conversation.user_id
+
     if conversation.update(conversation_params)
-      # Broadcast status update if needed (optional for now, as frontend will update locally)
+      # Aplica/remove etiqueta com_atendente quando atendente muda
+      new_user_id = conversation.user_id
+      if new_user_id != old_user_id
+        tag = current_user.account.tags.find_or_create_by!(name: 'com_atendente') { |t| t.color = '#8b5cf6' }
+        if new_user_id.present?
+          conversation.tags << tag unless conversation.tags.include?(tag)
+        else
+          conversation.tags.delete(tag)
+        end
+        ActionCable.server.broadcast('conversations_channel', {
+          event: 'conversation_tags_updated',
+          conversation_id: conversation.id,
+          tags: conversation.reload.tags.map { |t| { id: t.id, name: t.name, color: t.color } }
+        })
+      end
+
       ActionCable.server.broadcast("conversations_channel", {
         event: 'conversation_updated',
         conversation: format_conversation(conversation, users_hash)
