@@ -160,7 +160,7 @@ class ConversationsController < ApplicationController
     messages.each do |msg|
       next if msg.text.blank? && msg.attachment.blank?
       time   = msg.created_at.strftime('%d/%m/%Y %H:%M')
-      author = msg.author_type == 'outgoing' ? 'Atendente/IA' : (contact.name.presence || 'Lead')
+      author = msg.sender_type == 'Contact' ? (contact.name.presence || 'Lead') : 'Atendente/IA'
       text   = msg.text.presence || '[Anexo]'
       lines << "[#{time}] #{author}: #{text}"
     end
