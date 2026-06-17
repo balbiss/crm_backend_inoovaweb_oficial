@@ -1,5 +1,5 @@
 class ContactsController < ApplicationController
-  before_action :set_contact, only: %i[ show update destroy merge add_note ]
+  before_action :set_contact, only: %i[ show update destroy merge add_note block unblock ]
 
   # GET /contacts
   def index
@@ -81,6 +81,23 @@ class ContactsController < ApplicationController
     else
       render json: note.errors, status: :unprocessable_entity
     end
+  end
+
+  def block
+    @contact.update!(status: 'blocked')
+    # Pausa a IA permanentemente para esse contato
+    jid = @contact.jid.presence || @contact.phone
+    inbox = current_user.account.inboxes.first
+    Rails.cache.write("ai_paused_#{inbox&.id}_#{jid}", Time.current.to_i) if inbox && jid
+    render json: { message: 'Contato bloqueado com sucesso', status: 'blocked' }
+  end
+
+  def unblock
+    @contact.update!(status: 'active')
+    jid = @contact.jid.presence || @contact.phone
+    inbox = current_user.account.inboxes.first
+    Rails.cache.delete("ai_paused_#{inbox&.id}_#{jid}") if inbox && jid
+    render json: { message: 'Contato desbloqueado com sucesso', status: 'active' }
   end
 
   private

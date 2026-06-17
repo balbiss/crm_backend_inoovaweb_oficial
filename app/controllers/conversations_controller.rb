@@ -136,6 +136,47 @@ class ConversationsController < ApplicationController
     end
   end
 
+  def transcript
+    conversation = current_user.account.conversations
+      .includes(messages: :attachment_attachment, contact: {})
+      .find(params[:id])
+
+    contact = conversation.contact
+    messages = conversation.messages.order(:created_at)
+    account_name = current_user.account.name rescue 'Imobiliária'
+
+    lines = []
+    lines << "=" * 60
+    lines << "TRANSCRIÇÃO DA CONVERSA"
+    lines << "=" * 60
+    lines << "Imobiliária: #{account_name}"
+    lines << "Contato: #{contact.name.presence || contact.phone}"
+    lines << "Telefone: #{contact.phone}"
+    lines << "Atendente: #{conversation.user&.first_name || 'Não atribuído'}"
+    lines << "Data: #{I18n.l(Time.current, format: '%d/%m/%Y %H:%M')}"
+    lines << "=" * 60
+    lines << ""
+
+    messages.each do |msg|
+      next if msg.text.blank? && msg.attachment.blank?
+      time   = msg.created_at.strftime('%d/%m/%Y %H:%M')
+      author = msg.author_type == 'outgoing' ? 'Atendente/IA' : (contact.name.presence || 'Lead')
+      text   = msg.text.presence || '[Anexo]'
+      lines << "[#{time}] #{author}: #{text}"
+    end
+
+    lines << ""
+    lines << "=" * 60
+    lines << "Fim da transcrição — #{account_name}"
+    lines << "=" * 60
+
+    filename = "transcricao_#{contact.phone}_#{Date.current}.txt"
+    send_data lines.join("\n"),
+      filename: filename,
+      type: 'text/plain; charset=utf-8',
+      disposition: 'attachment'
+  end
+
   private
 
   def conversation_params

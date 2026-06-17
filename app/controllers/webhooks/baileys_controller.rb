@@ -157,6 +157,12 @@ module Webhooks
           c.jid = contact_jid
         end
 
+        # Ignora contatos bloqueados
+        if contact.status == 'blocked'
+          Rails.logger.info("Mensagem ignorada: contato #{contact_phone_formatted} está bloqueado")
+          return head :ok
+        end
+
         # Atualiza o JID se estava vazio (para contatos antigos)
         if contact.jid != contact_jid
           contact.update(jid: contact_jid)

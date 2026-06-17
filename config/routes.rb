@@ -16,6 +16,8 @@ Rails.application.routes.draw do
     member do
       post :merge
       post :add_note
+      patch :block
+      patch :unblock
     end
   end
   resources :tags
@@ -29,6 +31,7 @@ Rails.application.routes.draw do
       post :generate_summary
       get :ai_status
       post :resume_ai
+      get :transcript
     end
   end
 
