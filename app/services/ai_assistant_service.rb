@@ -398,7 +398,8 @@ class AiAssistantService
       # Pausa IA permanentemente para labels que encerram o ciclo de IA
       if %w[com_atendente visita_agendada desqualificado].include?(label_name)
         pause_ai_permanently
-        if label_name == 'com_atendente'
+        # Atribui para o próximo da fila em qualquer encerramento de ciclo (exceto desqualificado)
+        if %w[com_atendente visita_agendada].include?(label_name)
           RoundRobinAssignmentService.assign_next(@conversation.reload)
         end
       end
