@@ -95,7 +95,7 @@ class AiAssistantService
   end
 
   def build_message_history
-    recent_messages = @conversation.messages.order(created_at: :asc).last(40)
+    recent_messages = @conversation.messages.order(created_at: :asc).last(100)
     
     recent_messages.map do |msg|
       role = msg.sender_type == 'Contact' ? 'user' : 'assistant'
