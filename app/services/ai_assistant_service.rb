@@ -115,7 +115,9 @@ class AiAssistantService
     contact_phone = @conversation.contact.phone.presence || "Telefone desconhecido"
     contact_info = "Você está conversando com: #{contact_name}. Número do WhatsApp: #{contact_phone}."
     
-    prompt = "#{base_prompt}\nSeu nome é #{@inbox.ai_name || 'Assistente'}. Você atende clientes de uma imobiliária. Seja muito humana, empática e natural.\n[CONTEXTO TEMPORAL]: #{date_info} (Sempre use essa data e hora reais como base).\n[DADOS DO CLIENTE]: #{contact_info}"
+    labels_instruction = "\n[ETIQUETAS - USE SEMPRE QUE IDENTIFICAR]: Use a ferramenta 'apply_label' automaticamente assim que tiver certeza da situação: 'lead_quente' = demonstra interesse real e urgência; 'lead_frio' = só pesquisando, sem intenção clara; 'desqualificado' = fora do perfil (sem condições, outra região, etc). Não espere — aplique assim que identificar."
+
+    prompt = "#{base_prompt}\nSeu nome é #{@inbox.ai_name || 'Assistente'}. Você atende clientes de uma imobiliária. Seja muito humana, empática e natural.\n[CONTEXTO TEMPORAL]: #{date_info} (Sempre use essa data e hora reais como base).\n[DADOS DO CLIENTE]: #{contact_info}#{labels_instruction}"
     
     status = @conversation.contact.status || 'lead'
     
@@ -215,16 +217,39 @@ class AiAssistantService
         }
       }
     }
-    
+
+    label_tool = {
+      type: "function",
+      function: {
+        name: "apply_label",
+        description: "Aplica uma etiqueta na conversa para identificar a situação do lead. Use SEMPRE que identificar claramente a situação. Regras: 'lead_quente' quando o lead demonstra interesse real e urgência em comprar/alugar; 'lead_frio' quando o lead está apenas pesquisando sem intenção clara; 'desqualificado' quando o lead não tem perfil (sem condições financeiras, fora da região, etc). Não use 'agente_off' — ela é aplicada automaticamente pelo sistema.",
+        parameters: {
+          type: "object",
+          properties: {
+            label: {
+              type: "string",
+              enum: ["lead_quente", "lead_frio", "desqualificado"],
+              description: "Etiqueta a aplicar na conversa."
+            },
+            reason: {
+              type: "string",
+              description: "Motivo breve pelo qual está aplicando esta etiqueta."
+            }
+          },
+          required: ["label"]
+        }
+      }
+    }
+
     case status
     when 'lead'
-      [qualify_tool, kanban_tool]
+      [qualify_tool, kanban_tool, label_tool]
     when 'visit', 'atendimento'
-      [search_tool, photos_tool, appointment_tool, kanban_tool]
+      [search_tool, photos_tool, appointment_tool, kanban_tool, label_tool]
     when 'proposal', 'won'
-      [kanban_tool]
+      [kanban_tool, label_tool]
     else
-      [qualify_tool, search_tool, photos_tool, appointment_tool, kanban_tool]
+      [qualify_tool, search_tool, photos_tool, appointment_tool, kanban_tool, label_tool]
     end
   end
 
@@ -309,13 +334,6 @@ class AiAssistantService
         response_texts.join("\n")
       end
 
-    when "qualify_lead"
-      contact.update!(
-        temperature: args['temperature'],
-        intention: args['intention']
-      )
-      "Lead qualificado com sucesso. Temperatura atualizada para #{args['temperature']} e intenção definida como: #{args['intention']}."
-
     when "create_appointment"
       Appointment.create!(
         account_id: account_id,
@@ -342,6 +360,51 @@ class AiAssistantService
       )
       
       "Visita agendada com sucesso para #{args['date']} às #{args['time']} no imóvel ID #{args['property_id']}. O contato foi movido para 'Visita Agendada' no Kanban automaticamente."
+
+    when "apply_label"
+      label_name = args['label'].to_s.strip.downcase
+      colors = { 'lead_quente' => '#ef4444', 'lead_frio' => '#3b82f6', 'desqualificado' => '#6b7280' }
+      color = colors[label_name] || '#6b7280'
+
+      # Remove etiquetas conflitantes antes de aplicar
+      conflicting = { 'lead_quente' => ['lead_frio'], 'lead_frio' => ['lead_quente'], 'desqualificado' => ['lead_quente', 'lead_frio'] }
+      (conflicting[label_name] || []).each do |remove_name|
+        old_tag = @conversation.account.tags.find_by(name: remove_name)
+        @conversation.tags.delete(old_tag) if old_tag && @conversation.tags.include?(old_tag)
+      end
+
+      tag = @conversation.account.tags.find_or_create_by!(name: label_name) { |t| t.color = color }
+      @conversation.tags << tag unless @conversation.tags.include?(tag)
+
+      ActionCable.server.broadcast('conversations_channel', {
+        event: 'conversation_tags_updated',
+        conversation_id: @conversation.id,
+        tags: @conversation.reload.tags.map { |t| { id: t.id, name: t.name, color: t.color } }
+      })
+
+      "Etiqueta '#{label_name}' aplicada na conversa. #{args['reason']}"
+
+    when "qualify_lead"
+      contact.update!(temperature: args['temperature'], intention: args['intention'])
+
+      # Auto-aplica etiqueta de temperatura
+      temp_label = { 'Quente' => 'lead_quente', 'Frio' => 'lead_frio' }[args['temperature']]
+      if temp_label
+        execute_tool('apply_label', { 'label' => temp_label, 'reason' => "Temperatura: #{args['temperature']}" })
+      else
+        # Morno: remove as duas
+        ['lead_quente', 'lead_frio'].each do |n|
+          t = @conversation.account.tags.find_by(name: n)
+          @conversation.tags.delete(t) if t && @conversation.tags.include?(t)
+        end
+        ActionCable.server.broadcast('conversations_channel', {
+          event: 'conversation_tags_updated',
+          conversation_id: @conversation.id,
+          tags: @conversation.reload.tags.map { |t| { id: t.id, name: t.name, color: t.color } }
+        })
+      end
+
+      "Lead qualificado: temperatura=#{args['temperature']}, intenção=#{args['intention']}."
 
     when "move_kanban_card"
       contact.update!(status: args['stage'])
