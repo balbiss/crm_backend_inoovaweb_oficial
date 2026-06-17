@@ -115,7 +115,7 @@ class AiAssistantService
     contact_phone = @conversation.contact.phone.presence || "Telefone desconhecido"
     contact_info = "Você está conversando com: #{contact_name}. Número do WhatsApp: #{contact_phone}."
     
-    labels_instruction = "\n[ETIQUETAS - USE SEMPRE QUE IDENTIFICAR]: Use a ferramenta 'apply_label' automaticamente assim que tiver certeza da situação: 'lead_quente' = demonstra interesse real e urgência; 'lead_frio' = só pesquisando, sem intenção clara; 'desqualificado' = fora do perfil (sem condições, outra região, etc). Não espere — aplique assim que identificar."
+    labels_instruction = "\n[ETIQUETAS]: Após concluir a ação principal da mensagem, você pode usar 'apply_label' para classificar o lead se tiver certeza da situação: 'lead_quente' = interesse real e urgência; 'lead_frio' = só pesquisando; 'desqualificado' = fora do perfil; 'com_atendente' = quer falar com humano. Nunca interrompa outra ação para apenas etiquetar."
 
     prompt = "#{base_prompt}\nSeu nome é #{@inbox.ai_name || 'Assistente'}. Você atende clientes de uma imobiliária. Seja muito humana, empática e natural.\n[CONTEXTO TEMPORAL]: #{date_info} (Sempre use essa data e hora reais como base).\n[DADOS DO CLIENTE]: #{contact_info}#{labels_instruction}"
     
@@ -254,35 +254,44 @@ class AiAssistantService
   end
 
   def handle_response(response, messages)
-    choice = response.dig("choices", 0, "message")
-    
-    if choice["tool_calls"]
-      # Processar a chamada da ferramenta
-      choice["tool_calls"].each do |tool_call|
+    max_rounds = 4
+    current_response = response
+
+    max_rounds.times do
+      choice = current_response.dig("choices", 0, "message")
+
+      unless choice["tool_calls"]
+        return choice["content"]
+      end
+
+      # Processa todos os tool_calls desta rodada
+      all_tool_results = choice["tool_calls"].map do |tool_call|
         function_name = tool_call.dig("function", "name")
         arguments = JSON.parse(tool_call.dig("function", "arguments"))
-        
         result = execute_tool(function_name, arguments)
-        
-        # Reenviar para a IA com o resultado da ferramenta para formular a resposta final
-        messages << { role: "assistant", content: nil, tool_calls: [tool_call] }
-        messages << { role: "tool", tool_call_id: tool_call["id"], name: function_name, content: result.to_s }
+        { tool_call: tool_call, name: function_name, result: result.to_s }
       end
-      
-      # Segunda chamada para a IA gerar o texto final baseado no resultado das ferramentas
-      second_response = @client.chat(
+
+      # Adiciona a chamada do assistente e todos os resultados ao histórico
+      messages << { role: "assistant", content: nil, tool_calls: choice["tool_calls"] }
+      all_tool_results.each do |tr|
+        messages << { role: "tool", tool_call_id: tr[:tool_call]["id"], name: tr[:name], content: tr[:result] }
+      end
+
+      # Nova chamada com tools disponíveis (para permitir encadeamento)
+      current_response = @client.chat(
         parameters: {
           model: "gpt-4o",
           messages: [{ role: "system", content: build_system_prompt }] + messages,
+          tools: defined_tools,
+          tool_choice: "auto",
           temperature: @inbox.ai_temperature || 0.7
         }
       )
-      
-      return second_response.dig("choices", 0, "message", "content")
-    else
-      # Mensagem de texto normal
-      return choice["content"]
     end
+
+    # Fallback: última resposta se atingiu o limite de rodadas
+    current_response.dig("choices", 0, "message", "content")
   end
 
   def execute_tool(name, args)
@@ -389,16 +398,24 @@ class AiAssistantService
     when "qualify_lead"
       contact.update!(temperature: args['temperature'], intention: args['intention'])
 
-      # Auto-aplica etiqueta de temperatura
-      temp_label = { 'Quente' => 'lead_quente', 'Frio' => 'lead_frio' }[args['temperature']]
-      if temp_label
-        execute_tool('apply_label', { 'label' => temp_label, 'reason' => "Temperatura: #{args['temperature']}" })
-      else
-        # Morno: remove as duas
-        ['lead_quente', 'lead_frio'].each do |n|
+      # Auto-aplica etiqueta correspondente à temperatura
+      temp_label_map = { 'Quente' => 'lead_quente', 'Frio' => 'lead_frio', 'Morno' => 'lead_morno' }
+      label_name = temp_label_map[args['temperature']]
+      label_colors = { 'lead_quente' => '#ef4444', 'lead_frio' => '#3b82f6', 'lead_morno' => '#f59e0b' }
+
+      if label_name
+        # Remove etiquetas de temperatura anteriores
+        ['lead_quente', 'lead_frio', 'lead_morno'].each do |n|
           t = @conversation.account.tags.find_by(name: n)
-          @conversation.tags.delete(t) if t && @conversation.tags.include?(t)
+          next unless t
+          ct = @conversation.conversation_tags.find_by(tag_id: t.id)
+          ct&.delete
         end
+        @conversation.tags.reset
+
+        tag = @conversation.account.tags.find_or_create_by!(name: label_name) { |t| t.color = label_colors[label_name] }
+        @conversation.tags << tag
+
         ActionCable.server.broadcast('conversations_channel', {
           event: 'conversation_tags_updated',
           conversation_id: @conversation.id,
