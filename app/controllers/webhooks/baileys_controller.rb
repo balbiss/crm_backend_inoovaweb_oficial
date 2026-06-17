@@ -80,16 +80,21 @@ module Webhooks
 
         # Tratamento de fromMe (Humano do nosso lado enviou mensagem)
         if msg.dig(:key, :fromMe)
-          # Se a IA estiver ativada nesta caixa, pausamos ela por 6 horas para esse contato
-          if inbox.ai_enabled
-            if Rails.cache.read("ai_is_replying_#{inbox.id}_#{remote_jid}")
-              # A própria IA enviou a mensagem, não fazemos nada (apenas ignoramos o echo)
-            else
-              Rails.logger.info("IA pausada para #{remote_jid} devido a intervenção humana (fromMe).")
-              Rails.cache.write("ai_paused_#{inbox.id}_#{remote_jid}", true, expires_in: 6.hours)
-            end
+          baileys_msg_id = msg.dig(:key, :id)
+          # Se a mensagem já existe no banco, foi enviada pela IA — ignora o echo sem pausar a IA
+          if baileys_msg_id.present? && Message.exists?(source_id: baileys_msg_id)
+            next
           end
-          next # Ignoramos a criação da mensagem no webhook pois a UI já criou
+          # Se a IA sinaliza que está respondendo agora, também é echo da IA
+          if inbox.ai_enabled && Rails.cache.read("ai_is_replying_#{inbox.id}_#{remote_jid}")
+            next
+          end
+          # Chegou até aqui: é intervenção humana real → pausa a IA
+          if inbox.ai_enabled
+            Rails.logger.info("IA pausada para #{remote_jid} devido a intervenção humana (fromMe).")
+            Rails.cache.write("ai_paused_#{inbox.id}_#{remote_jid}", true, expires_in: 6.hours)
+          end
+          next
         end
 
         # Extração inteligente do telefone e JID real (lid vs s.whatsapp.net)
@@ -298,17 +303,18 @@ module Webhooks
                       # Para de digitar
                       WhatsappBaileysService.new(inbox).send_presence_update(remote_jid, 'paused')
                       
-                      # Envia a resposta de volta pro WhatsApp
-                      WhatsappBaileysService.new(inbox).send_message(remote_jid, paragraph.strip)
-                      
-                      # Salva a mensagem da IA no nosso banco para aparecer no Front
+                      # Envia a resposta de volta pro WhatsApp e captura o ID do Baileys
+                      baileys_id = WhatsappBaileysService.new(inbox).send_message(remote_jid, paragraph.strip)
+
+                      # Salva a mensagem da IA usando o ID do Baileys como source_id
+                      # para que o echo fromMe seja reconhecido e não ative o cooldown
                       Message.create!(
                         account: conversation.account,
                         conversation: conversation,
                         text: paragraph.strip,
                         sender_type: 'User',
                         sender_id: nil,
-                        source_id: "ai_#{SecureRandom.hex(8)}",
+                        source_id: baileys_id.present? ? baileys_id : "ai_#{SecureRandom.hex(8)}",
                         status: :delivered
                       )
                     end

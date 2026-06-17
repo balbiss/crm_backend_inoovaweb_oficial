@@ -101,7 +101,10 @@ class WhatsappBaileysService
 
     Rails.logger.info("Baileys send_message response code: #{response.code}, body: #{response.body}")
     puts "Baileys API Response: #{response.body}" # Imprime no console também para o rails runner
-    response.is_a?(Net::HTTPSuccess)
+    if response.is_a?(Net::HTTPSuccess)
+      parsed = JSON.parse(response.body) rescue {}
+      parsed.dig("data", "key", "id")
+    end
   end
 
   def send_presence_update(recipient_phone, presence = 'composing')
