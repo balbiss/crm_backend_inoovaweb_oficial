@@ -30,6 +30,27 @@ class ConversationsController < ApplicationController
     end
   end
 
+  def ai_status
+    conversation = current_user.account.conversations.find(params[:id])
+    contact_jid = conversation.contact.jid.presence || conversation.contact.phone
+    cache_key = "ai_paused_#{conversation.inbox_id}_#{contact_jid}"
+    paused_at = Rails.cache.read(cache_key)
+
+    if paused_at
+      remaining = [(30 * 60) - (Time.current.to_i - paused_at.to_i), 0].max
+      render json: { paused: true, remaining_seconds: remaining }
+    else
+      render json: { paused: false, remaining_seconds: 0 }
+    end
+  end
+
+  def resume_ai
+    conversation = current_user.account.conversations.find(params[:id])
+    contact_jid = conversation.contact.jid.presence || conversation.contact.phone
+    Rails.cache.delete("ai_paused_#{conversation.inbox_id}_#{contact_jid}")
+    render json: { success: true }
+  end
+
   def generate_summary
     conversation = current_user.account.conversations.includes(:messages).find(params[:id])
     

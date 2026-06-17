@@ -22,6 +22,8 @@ Rails.application.routes.draw do
     resources :scheduled_messages, only: [:index, :create, :destroy]
     member do
       post :generate_summary
+      get :ai_status
+      post :resume_ai
     end
   end
 
