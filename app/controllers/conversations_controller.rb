@@ -2,38 +2,42 @@ class ConversationsController < ApplicationController
   before_action :authenticate_user!
 
   def index
-    # Load all conversations for the user's account
-    conversations = current_user.account.conversations.includes(:user, messages: { attachment_attachment: :blob }, contact: { notes: :user })
+    conversations = current_user.account.conversations
+      .includes(:user, :tags, messages: { attachment_attachment: :blob }, contact: { notes: :user })
     users_hash = User.where(account_id: current_user.account_id).index_by(&:id)
-    
     render json: conversations.map { |conv| format_conversation(conv, users_hash) }
   end
 
   def show
-    conversation = current_user.account.conversations.includes(:user, messages: { attachment_attachment: :blob }, contact: { notes: :user }).find(params[:id])
+    conversation = current_user.account.conversations
+      .includes(:user, :tags, messages: { attachment_attachment: :blob }, contact: { notes: :user })
+      .find(params[:id])
     users_hash = User.where(account_id: current_user.account_id).index_by(&:id)
     render json: format_conversation(conversation, users_hash)
   end
 
   def update
-    conversation = current_user.account.conversations.find(params[:id])
+    conversation = current_user.account.conversations.includes(:tags).find(params[:id])
     users_hash = User.where(account_id: current_user.account_id).index_by(&:id)
     old_user_id = conversation.user_id
 
     if conversation.update(conversation_params)
-      # Aplica/remove etiqueta com_atendente quando atendente muda
       new_user_id = conversation.user_id
       if new_user_id != old_user_id
         tag = current_user.account.tags.find_or_create_by!(name: 'com_atendente') { |t| t.color = '#8b5cf6' }
         if new_user_id.present?
-          conversation.tags << tag unless conversation.tags.include?(tag)
+          unless conversation.tags.any? { |t| t.id == tag.id }
+            conversation.tags << tag
+            conversation.tags.reset
+          end
         else
-          conversation.tags.delete(tag)
+          conversation.conversation_tags.where(tag_id: tag.id).delete_all
+          conversation.tags.reset
         end
         ActionCable.server.broadcast('conversations_channel', {
           event: 'conversation_tags_updated',
           conversation_id: conversation.id,
-          tags: conversation.reload.tags.map { |t| { id: t.id, name: t.name, color: t.color } }
+          tags: conversation.tags.map { |t| { id: t.id, name: t.name, color: t.color } }
         })
       end
 
@@ -48,7 +52,7 @@ class ConversationsController < ApplicationController
   end
 
   def ai_status
-    conversation = current_user.account.conversations.find(params[:id])
+    conversation = current_user.account.conversations.includes(:contact).find(params[:id])
     contact_jid = conversation.contact.jid.presence || conversation.contact.phone
     cache_key = "ai_paused_#{conversation.inbox_id}_#{contact_jid}"
     paused_at = Rails.cache.read(cache_key)
@@ -62,17 +66,17 @@ class ConversationsController < ApplicationController
   end
 
   def resume_ai
-    conversation = current_user.account.conversations.find(params[:id])
+    conversation = current_user.account.conversations.includes(:contact, :tags).find(params[:id])
     contact_jid = conversation.contact.jid.presence || conversation.contact.phone
     Rails.cache.delete("ai_paused_#{conversation.inbox_id}_#{contact_jid}")
-    # Remove etiqueta agente_off
-    tag = current_user.account.tags.find_by(name: 'agente_off')
-    if tag && conversation.tags.include?(tag)
-      conversation.tags.delete(tag)
+    agente_off = conversation.tags.find { |t| t.name == 'agente_off' }
+    if agente_off
+      conversation.conversation_tags.where(tag_id: agente_off.id).delete_all
+      remaining_tags = conversation.tags.reject { |t| t.id == agente_off.id }
       ActionCable.server.broadcast('conversations_channel', {
         event: 'conversation_tags_updated',
         conversation_id: conversation.id,
-        tags: conversation.tags.map { |t| { id: t.id, name: t.name, color: t.color } }
+        tags: remaining_tags.map { |t| { id: t.id, name: t.name, color: t.color } }
       })
     end
     render json: { success: true }
@@ -127,7 +131,10 @@ class ConversationsController < ApplicationController
   end
 
   def format_conversation(conv, users_hash = {})
-    last_message = conv.messages.order(created_at: :asc).last
+    # Sort in memory — avoids N+1 from .order() on eager-loaded association
+    sorted_messages = conv.messages.sort_by(&:created_at)
+    last_message = sorted_messages.last
+    sorted_notes = conv.contact.notes.sort_by { |n| -n.created_at.to_i }
 
     {
       id: conv.id,
@@ -139,7 +146,7 @@ class ConversationsController < ApplicationController
         jid: conv.contact.jid,
         avatar_url: conv.contact.avatar_url,
         avatarInitials: conv.contact.name.to_s[0..1].upcase,
-        avatarBg: '#0052CC', # Static for now
+        avatarBg: '#0052CC',
         status: 'online',
         cpf: conv.contact.cpf,
         birth_date: conv.contact.birth_date,
@@ -158,7 +165,7 @@ class ConversationsController < ApplicationController
         state: conv.contact.state,
         address_number: conv.contact.address_number,
         address_complement: conv.contact.address_complement,
-        notes: conv.contact.notes.order(created_at: :desc).map do |n|
+        notes: sorted_notes.map do |n|
           {
             id: n.id,
             content: n.content,
@@ -172,19 +179,20 @@ class ConversationsController < ApplicationController
       preview: last_message&.text || 'Nova Conversa',
       timestamp: last_message ? last_message.created_at.strftime('%H:%M') : conv.created_at.strftime('%H:%M'),
       unread: conv.unread_count,
-      messages: conv.messages.order(created_at: :asc).map do |msg|
+      messages: sorted_messages.map do |msg|
+        sender_type = msg.sender_type.downcase
         {
           id: msg.id,
-          senderType: msg.sender_type.downcase, # 'contact' or 'user' (frontend expects 'agent')
+          senderType: sender_type == 'user' ? 'agent' : sender_type,
           text: msg.text,
           timestamp: msg.created_at.iso8601,
           status: msg.status,
-          agentName: msg.sender_type == 'User' ? (users_hash[msg.sender_id]&.first_name || User.find_by(id: msg.sender_id)&.first_name) : nil,
+          agentName: msg.sender_type == 'User' ? (users_hash[msg.sender_id]&.first_name || 'Agente') : nil,
           isPrivate: msg.is_private,
           attachmentUrl: msg.attachment.attached? ? Rails.application.routes.url_helpers.rails_blob_url(msg.attachment, host: ENV['API_HOST'] || 'http://localhost:3000') : nil,
           attachmentType: msg.attachment.attached? ? msg.attachment.content_type : nil
         }
-      end.map { |m| m[:senderType] == 'user' ? m.merge(senderType: 'agent') : m },
+      end,
       assignee: conv.user&.first_name,
       assignee_id: conv.user_id,
       status: conv.status,
