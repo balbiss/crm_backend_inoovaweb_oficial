@@ -320,11 +320,13 @@ class AiAssistantService
         if prop_results.any?
           response_texts << "Imóveis Avulsos:"
           response_texts += prop_results.map do |p|
+            has_photos = p.photos.attached?
             desc = "- ID #{p.id}: #{p.title || p.property_type || 'Imóvel'} em #{p.neighborhood}, #{p.city}. "
             desc += "Quartos: #{p.bedrooms || 0} (Suítes: #{p.suites || 0}). Banheiros: #{p.bathrooms || 0}. Vagas: #{p.parking_spots || 0}. "
             desc += "Área: #{p.built_area || p.total_area}m². "
             desc += "Preço: R$ #{p.price || 0}. Transação: #{p.listing_type}. "
-            desc += "Descrição: #{p.description&.truncate(300) || 'Sem descrição.'}"
+            desc += "Descrição: #{p.description&.truncate(300) || 'Sem descrição.'}. "
+            desc += has_photos ? "[TEM_FOTOS: SIM — você pode oferecer enviar fotos usando send_property_photos]" : "[TEM_FOTOS: NÃO — NÃO ofereça enviar fotos deste imóvel]"
             desc
           end
         end
