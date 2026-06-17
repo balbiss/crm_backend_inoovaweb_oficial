@@ -395,6 +395,11 @@ class AiAssistantService
         tags: @conversation.reload.tags.map { |t| { id: t.id, name: t.name, color: t.color } }
       })
 
+      # Rodízio automático ao transferir para atendente humano
+      if label_name == 'com_atendente'
+        RoundRobinAssignmentService.assign_next(@conversation.reload)
+      end
+
       "Etiqueta '#{label_name}' aplicada na conversa. #{args['reason']}"
 
     when "qualify_lead"

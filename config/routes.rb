@@ -6,6 +6,10 @@ Rails.application.routes.draw do
     member do
       patch :block
       patch :unblock
+      patch :toggle_roundrobin
+    end
+    collection do
+      get :queue
     end
   end
   resources :contacts do

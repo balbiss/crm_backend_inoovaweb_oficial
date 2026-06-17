@@ -1,5 +1,5 @@
 class AgentsController < ApplicationController
-  before_action :set_agent, only: %i[ show update destroy block unblock ]
+  before_action :set_agent, only: %i[ show update destroy block unblock toggle_roundrobin ]
 
   # GET /agents
   def index
@@ -8,12 +8,14 @@ class AgentsController < ApplicationController
     account = current_user&.account || Account.first
     @agents = account.users.order(created_at: :desc)
     
-    render json: @agents.as_json(except: [:encrypted_password, :jti])
+    render json: @agents.as_json(except: [:encrypted_password, :jti],
+                                  methods: [:available_for_roundrobin, :queue_position])
   end
 
   # GET /agents/1
   def show
-    render json: @agent.as_json(except: [:encrypted_password, :jti])
+    render json: @agent.as_json(except: [:encrypted_password, :jti],
+                                 methods: [:available_for_roundrobin, :queue_position])
   end
 
   # POST /agents
@@ -58,6 +60,29 @@ class AgentsController < ApplicationController
     else
       render json: @agent.errors, status: :unprocessable_entity
     end
+  end
+
+  # GET /agents/queue
+  def queue
+    account = current_user&.account || Account.first
+    agents = account.users
+      .where(status: 'active', available_for_roundrobin: true)
+      .order(Arel.sql('queue_position ASC NULLS FIRST, id ASC'))
+    render json: agents.as_json(only: [:id, :first_name, :last_name, :queue_position])
+  end
+
+  # PATCH /agents/1/toggle_roundrobin
+  def toggle_roundrobin
+    account = current_user&.account || Account.first
+
+    if @agent.available_for_roundrobin?
+      @agent.update!(available_for_roundrobin: false, queue_position: nil)
+    else
+      max_pos = account.users.where(available_for_roundrobin: true).maximum(:queue_position) || 0
+      @agent.update!(available_for_roundrobin: true, queue_position: max_pos + 1)
+    end
+
+    render json: @agent.as_json(except: [:encrypted_password, :jti])
   end
 
   # DELETE /agents/1
