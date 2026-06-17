@@ -92,7 +92,7 @@ module Webhooks
           # Chegou até aqui: é intervenção humana real → pausa a IA
           if inbox.ai_enabled
             Rails.logger.info("IA pausada para #{remote_jid} devido a intervenção humana (fromMe).")
-            Rails.cache.write("ai_paused_#{inbox.id}_#{remote_jid}", Time.current.to_i, expires_in: 30.minutes)
+            Rails.cache.write("ai_paused_#{inbox.id}_#{remote_jid}", Time.current.to_i)
             # Aplica etiqueta agente_off na conversa
             Thread.new do
               begin

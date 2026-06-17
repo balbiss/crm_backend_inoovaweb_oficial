@@ -395,9 +395,12 @@ class AiAssistantService
         tags: @conversation.reload.tags.map { |t| { id: t.id, name: t.name, color: t.color } }
       })
 
-      # Rodízio automático ao transferir para atendente humano
-      if label_name == 'com_atendente'
-        RoundRobinAssignmentService.assign_next(@conversation.reload)
+      # Pausa IA permanentemente para labels que encerram o ciclo de IA
+      if %w[com_atendente visita_agendada desqualificado].include?(label_name)
+        pause_ai_permanently
+        if label_name == 'com_atendente'
+          RoundRobinAssignmentService.assign_next(@conversation.reload)
+        end
       end
 
       "Etiqueta '#{label_name}' aplicada na conversa. #{args['reason']}"
@@ -487,5 +490,25 @@ class AiAssistantService
     end
   rescue => e
     "Erro ao executar a ferramenta: #{e.message}"
+  end
+
+  def pause_ai_permanently
+    jid = @conversation.contact.jid.presence || @conversation.contact.phone
+    return unless jid
+
+    # Pausa sem expiração — só é retomada pelo botão "Retomar IA"
+    Rails.cache.write("ai_paused_#{@inbox.id}_#{jid}", Time.current.to_i)
+
+    # Aplica tag agente_off para indicar visualmente que a IA está desligada
+    tag = @conversation.account.tags.find_or_create_by!(name: 'agente_off') { |t| t.color = '#f97316' }
+    @conversation.tags << tag unless @conversation.tags.include?(tag)
+
+    ActionCable.server.broadcast('conversations_channel', {
+      event: 'conversation_tags_updated',
+      conversation_id: @conversation.id,
+      tags: @conversation.reload.tags.map { |t| { id: t.id, name: t.name, color: t.color } }
+    })
+  rescue => e
+    Rails.logger.error("Erro ao pausar IA: #{e.message}")
   end
 end
