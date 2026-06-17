@@ -13,7 +13,7 @@ class Property < ApplicationRecord
     photos.map do |p|
       {
         id: p.id,
-        url: Rails.application.routes.url_helpers.rails_blob_url(p, host: 'http://localhost:3000')
+        url: Rails.application.routes.url_helpers.rails_blob_path(p)
       }
     end
   end
