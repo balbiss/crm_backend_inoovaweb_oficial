@@ -167,8 +167,24 @@ class WhatsappBaileysService
   end
 
   def connected?
-    status = Rails.cache.read("inbox:#{@inbox.id}:status")
-    status == 'open'
+    # Cache tem prioridade (escrito pelo webhook connection.update)
+    cached = Rails.cache.read("inbox:#{@inbox.id}:status")
+    return cached == 'open' unless cached.nil?
+
+    # Cache vazio (ex: após restart) — consulta o Baileys API diretamente
+    begin
+      uri = URI.parse("#{@api_url}/connections/#{@phone_number}/presence")
+      req = Net::HTTP::Patch.new(uri)
+      req.content_type = "application/json"
+      req["x-api-key"] = @api_key
+      req.body = JSON.dump({ "type" => "available" })
+      res = Net::HTTP.start(uri.hostname, uri.port, open_timeout: 3, read_timeout: 5) { |h| h.request(req) }
+      is_connected = res.is_a?(Net::HTTPSuccess)
+      Rails.cache.write("inbox:#{@inbox.id}:status", is_connected ? 'open' : 'close', expires_in: 2.minutes)
+      is_connected
+    rescue StandardError
+      false
+    end
   end
 
   def delete_connection
