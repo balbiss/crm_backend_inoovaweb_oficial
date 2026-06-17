@@ -93,6 +93,23 @@ module Webhooks
           if inbox.ai_enabled
             Rails.logger.info("IA pausada para #{remote_jid} devido a intervenção humana (fromMe).")
             Rails.cache.write("ai_paused_#{inbox.id}_#{remote_jid}", Time.current.to_i, expires_in: 30.minutes)
+            # Aplica etiqueta agente_off na conversa
+            Thread.new do
+              begin
+                conv = inbox.conversations.joins(:contact).where(contacts: { jid: remote_jid }).first
+                if conv
+                  tag = conv.account.tags.find_or_create_by!(name: 'agente_off') { |t| t.color = '#f97316' }
+                  conv.tags << tag unless conv.tags.include?(tag)
+                  ActionCable.server.broadcast('conversations_channel', {
+                    event: 'conversation_tags_updated',
+                    conversation_id: conv.id,
+                    tags: conv.tags.map { |t| { id: t.id, name: t.name, color: t.color } }
+                  })
+                end
+              rescue => e
+                Rails.logger.error("Erro ao aplicar tag agente_off: #{e.message}")
+              end
+            end
           end
           next
         end

@@ -20,6 +20,7 @@ Rails.application.routes.draw do
   resources :conversations, only: [:index, :show, :update] do
     resources :messages, only: [:index, :create]
     resources :scheduled_messages, only: [:index, :create, :destroy]
+    resources :tags, only: [:index, :create, :destroy], controller: 'conversation_tags'
     member do
       post :generate_summary
       get :ai_status

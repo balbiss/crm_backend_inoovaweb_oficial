@@ -48,6 +48,16 @@ class ConversationsController < ApplicationController
     conversation = current_user.account.conversations.find(params[:id])
     contact_jid = conversation.contact.jid.presence || conversation.contact.phone
     Rails.cache.delete("ai_paused_#{conversation.inbox_id}_#{contact_jid}")
+    # Remove etiqueta agente_off
+    tag = current_user.account.tags.find_by(name: 'agente_off')
+    if tag && conversation.tags.include?(tag)
+      conversation.tags.delete(tag)
+      ActionCable.server.broadcast('conversations_channel', {
+        event: 'conversation_tags_updated',
+        conversation_id: conversation.id,
+        tags: conversation.tags.map { |t| { id: t.id, name: t.name, color: t.color } }
+      })
+    end
     render json: { success: true }
   end
 
@@ -160,7 +170,8 @@ class ConversationsController < ApplicationController
       end.map { |m| m[:senderType] == 'user' ? m.merge(senderType: 'agent') : m },
       assignee: conv.user&.first_name,
       assignee_id: conv.user_id,
-      status: conv.status
+      status: conv.status,
+      tags: conv.tags.map { |t| { id: t.id, name: t.name, color: t.color } }
     }
   end
 end
