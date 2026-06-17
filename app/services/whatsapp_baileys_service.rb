@@ -114,16 +114,11 @@ class WhatsappBaileysService
     end
 
     uri = URI.parse("#{@api_url}/connections/#{@phone_number}/presence")
-    request = Net::HTTP::Post.new(uri)
+    request = Net::HTTP::Patch.new(uri)
     request.content_type = "application/json"
     request["x-api-key"] = @api_key
-    
-    # "composing", "recording", "paused"
-    payload = {
-      "jid" => jid,
-      "presence" => presence
-    }
-    
+
+    payload = { "type" => presence, "toJid" => jid }
     request.body = JSON.dump(payload)
 
     req_options = {
@@ -135,7 +130,7 @@ class WhatsappBaileysService
     response = Net::HTTP.start(uri.hostname, uri.port, req_options) do |http|
       http.request(request)
     end
-    
+
     response.is_a?(Net::HTTPSuccess)
   rescue StandardError => e
     Rails.logger.error("Baileys send_presence_update error: #{e.message}")
