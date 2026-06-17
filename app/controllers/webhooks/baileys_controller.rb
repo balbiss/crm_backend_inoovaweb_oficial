@@ -288,20 +288,23 @@ module Webhooks
                     # Separar resposta em múltiplos balões (parágrafos)
                     paragraphs = ai_response_text.is_a?(Array) ? ai_response_text : ai_response_text.split("\n\n").reject(&:blank?)
                     
+                    # Usa o JID @s.whatsapp.net para presence (LID não mostra digitando no WhatsApp)
+                    presence_jid = (remote_jid_alt.presence && remote_jid_alt.include?('@s.whatsapp.net')) ? remote_jid_alt : remote_jid
+
                     paragraphs.each do |paragraph|
                       # Simulador de digitando
-                      WhatsappBaileysService.new(inbox).send_presence_update(remote_jid, 'composing')
-                      
+                      WhatsappBaileysService.new(inbox).send_presence_update(presence_jid, 'composing')
+
                       # Calcula tempo de digitação com base no tamanho (mais realista)
                       typing_time = [(paragraph.length / 15.0).round, 3].max
                       typing_time = [typing_time, 15].min
                       sleep typing_time
-                      
+
                       # Renova o aviso para garantir que o echo da msg dê tempo de chegar
                       Rails.cache.write("ai_is_replying_#{inbox.id}_#{remote_jid}", true, expires_in: 30.seconds)
-                      
+
                       # Para de digitar
-                      WhatsappBaileysService.new(inbox).send_presence_update(remote_jid, 'paused')
+                      WhatsappBaileysService.new(inbox).send_presence_update(presence_jid, 'paused')
                       
                       # Envia a resposta de volta pro WhatsApp e captura o ID do Baileys
                       baileys_id = WhatsappBaileysService.new(inbox).send_message(remote_jid, paragraph.strip)
