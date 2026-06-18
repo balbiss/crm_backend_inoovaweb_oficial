@@ -15,7 +15,7 @@ class AppointmentsController < ApplicationController
     }
 
     by_agent = if owner?
-      account.users.where(role: %w[atendente admin]).map do |agent|
+      current_user.account.users.where(role: %w[atendente admin]).map do |agent|
         agent_scope = scoped.where(user_id: agent.id)
         {
           id:    agent.id,
