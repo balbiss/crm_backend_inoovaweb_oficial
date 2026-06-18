@@ -24,7 +24,7 @@ class Message < ApplicationRecord
       text: text,
       timestamp: created_at.iso8601,
       status: status,
-      agentName: sender_type == 'User' ? User.find_by(id: sender_id)&.first_name : nil,
+      agentName: sender_type == 'User' ? User.where(id: sender_id).pick(:first_name) : nil,
       isPrivate: is_private,
       attachmentUrl: attachment.attached? ? Rails.application.routes.url_helpers.rails_blob_url(attachment, host: ENV['API_HOST'] || 'http://localhost:3000') : nil,
       attachmentType: attachment.attached? ? attachment.content_type : nil

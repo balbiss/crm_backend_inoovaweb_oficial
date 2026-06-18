@@ -3,7 +3,7 @@ class CondominiumsController < ApplicationController
 
   # GET /condominiums
   def index
-    @condominiums = Condominium.all
+    @condominiums = current_user.account.condominiums
     render json: @condominiums
   end
 
@@ -56,7 +56,7 @@ class CondominiumsController < ApplicationController
 
   private
     def set_condominium
-      @condominium = Condominium.find(params[:id])
+      @condominium = current_user.account.condominiums.find(params[:id])
     end
 
     def condominium_params

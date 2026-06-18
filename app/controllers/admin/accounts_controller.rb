@@ -1,8 +1,8 @@
 class Admin::AccountsController < Admin::BaseController
   def index
     # Retorna todas as contas com dados do proprietário principal
-    accounts = Account.all.map do |account|
-      owner = account.users.where(role: :empresa).first || account.users.first
+    accounts = Account.includes(:users).all.map do |account|
+      owner = account.users.find { |u| u.role.to_s == 'empresa' } || account.users.first
       {
         id: account.id,
         name: account.name,

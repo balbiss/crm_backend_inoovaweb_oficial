@@ -69,7 +69,8 @@ module Webhooks
         msg = msg.with_indifferent_access if msg.respond_to?(:with_indifferent_access)
         
         phone_number = params[:phone]
-        inbox = Inbox.find_by(phone_number: phone_number) || Inbox.find_by(phone_number: phone_number&.delete('+')) || Inbox.first
+        clean_phone  = phone_number&.delete('+')
+        inbox = Inbox.find_by(phone_number: phone_number) || Inbox.find_by(phone_number: clean_phone)
         return unless inbox
 
         remote_jid = msg.dig(:key, :remoteJid)

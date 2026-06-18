@@ -125,7 +125,7 @@ class InboxesController < ApplicationController
     USER
 
     begin
-      api_key = GlobalSetting.find_by(key: 'openai_api_key')&.value.presence || ENV['OPENAI_API_KEY']
+      api_key = GlobalSetting.fetch('openai_api_key').presence || ENV['OPENAI_API_KEY']
       client = OpenAI::Client.new(access_token: api_key)
       
       response = client.chat(

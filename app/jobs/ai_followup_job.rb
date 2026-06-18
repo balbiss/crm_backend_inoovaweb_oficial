@@ -33,7 +33,7 @@ class AiFollowupJob < ApplicationJob
   end
 
   def generate_and_send_followup(inbox, conversation)
-    api_key = GlobalSetting.find_by(key: 'openai_api_key')&.value.presence || ENV['OPENAI_API_KEY']
+    api_key = GlobalSetting.fetch('openai_api_key').presence || ENV['OPENAI_API_KEY']
     return unless api_key
 
     client = OpenAI::Client.new(access_token: api_key)

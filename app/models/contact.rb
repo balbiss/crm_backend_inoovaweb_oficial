@@ -5,7 +5,9 @@ class Contact < ApplicationRecord
   has_many :notes, dependent: :destroy
   has_many :appointments, dependent: :destroy
 
-  after_save :broadcast_contact_update
+  BROADCAST_FIELDS = %w[name first_name last_name phone temperature status source intention user_id avatar_url].freeze
+
+  after_save :broadcast_contact_update, if: -> { saved_changes.keys.any? { |k| BROADCAST_FIELDS.include?(k) } }
 
   private
 

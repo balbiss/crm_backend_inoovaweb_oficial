@@ -3,11 +3,16 @@ class ContactsController < ApplicationController
 
   # GET /contacts
   def index
-    if current_user&.role == 'admin' || current_user&.role == 'empresa' || current_user&.permissions&.dig('view_all_contacts')
-      @contacts = Contact.all
+    base = current_user.account.contacts
+    @contacts = if current_user.role == 'admin' || current_user.role == 'empresa' || current_user.permissions&.dig('view_all_contacts')
+      base
     else
-      @contacts = Contact.where(user_id: current_user.id)
+      base.where(user_id: current_user.id)
     end
+
+    page     = (params[:page] || 1).to_i
+    per_page = (params[:per_page] || 50).to_i.clamp(1, 200)
+    @contacts = @contacts.order(created_at: :desc).offset((page - 1) * per_page).limit(per_page)
 
     render json: @contacts
   end
@@ -71,10 +76,7 @@ class ContactsController < ApplicationController
   def add_note
     note = @contact.notes.new(content: params[:content])
     note.account_id = @contact.account_id
-    note.user_id = current_user.id if respond_to?(:current_user) && current_user
-    
-    # Just in case we don't have current_user properly mapped yet
-    note.user_id ||= User.first.id
+    note.user_id = current_user.id
 
     if note.save
       render json: note.as_json(include: :user), status: :created
@@ -103,7 +105,7 @@ class ContactsController < ApplicationController
   private
     # Use callbacks to share common setup or constraints between actions.
     def set_contact
-      @contact = Contact.find(params.expect(:id))
+      @contact = current_user.account.contacts.find(params[:id])
     end
 
     # Only allow a list of trusted parameters through.

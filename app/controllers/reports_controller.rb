@@ -26,28 +26,37 @@ class ReportsController < ApplicationController
   end
 
   def by_agent
-    period = parse_period
-    agents = account.users.where(role: 'atendente').or(account.users.where(role: 'admin'))
+    period     = parse_period
+    agents     = account.users.where(role: %w[atendente admin]).to_a
+    agent_ids  = agents.map(&:id)
+    date_range = period.first.to_date..period.last.to_date
+
+    # Batch: 6 queries total instead of ~8 per agent
+    leads_count  = account.contacts.where(user_id: agent_ids, created_at: period).group(:user_id).count
+    quentes_count = account.contacts.where(user_id: agent_ids, temperature: %w[quente Quente QUENTE], created_at: period).group(:user_id).count
+    won_count    = account.contacts.where(user_id: agent_ids, status: 'won', created_at: period).group(:user_id).count
+    conv_open    = account.conversations.where(user_id: agent_ids, status: :open).group(:user_id).count
+    conv_total   = account.conversations.where(user_id: agent_ids).group(:user_id).count
+    appt_base    = Appointment.where(account_id: account.id, user_id: agent_ids, appointment_date: date_range)
+    appt_total   = appt_base.group(:user_id).count
+    appt_done    = appt_base.where(status: 'completed').group(:user_id).count
 
     data = agents.map do |agent|
-      contacts   = account.contacts.where(user_id: agent.id, created_at: period)
-      visits     = Appointment.where(account_id: account.id, user_id: agent.id)
-                              .where(appointment_date: period.first.to_date..period.last.to_date)
-      conv_open  = account.conversations.where(user_id: agent.id, status: :open).count
-      conv_total = account.conversations.where(user_id: agent.id).count
-
+      id = agent.id
+      lc = leads_count[id] || 0
+      wc = won_count[id]   || 0
       {
-        id:               agent.id,
-        name:             "#{agent.first_name} #{agent.last_name}".strip,
-        email:            agent.email,
-        leads_received:   contacts.count,
-        quentes:          contacts.where(temperature: %w[quente Quente QUENTE]).count,
-        visits_scheduled: visits.count,
-        visits_done:      visits.where(status: 'completed').count,
-        won:              contacts.where(status: 'won').count,
-        open_conversations: conv_open,
-        total_conversations: conv_total,
-        conversion_rate:  contacts.count > 0 ? (contacts.where(status: 'won').count.to_f / contacts.count * 100).round(1) : 0
+        id:                  id,
+        name:                "#{agent.first_name} #{agent.last_name}".strip,
+        email:               agent.email,
+        leads_received:      lc,
+        quentes:             quentes_count[id] || 0,
+        visits_scheduled:    appt_total[id]    || 0,
+        visits_done:         appt_done[id]     || 0,
+        won:                 wc,
+        open_conversations:  conv_open[id]     || 0,
+        total_conversations: conv_total[id]    || 0,
+        conversion_rate:     lc > 0 ? (wc.to_f / lc * 100).round(1) : 0
       }
     end
 
@@ -55,28 +64,18 @@ class ReportsController < ApplicationController
   end
 
   def by_tag
-    tags = account.tags
+    tags    = account.tags.to_a
+    tag_ids = tags.map(&:id)
+
+    # Batch: 1 query for all tag counts instead of N
+    counts = ConversationTag
+      .joins(conversation: :contact)
+      .where(tag_id: tag_ids, contacts: { account_id: account.id })
+      .group(:tag_id)
+      .count('DISTINCT contacts.id')
 
     data = tags.map do |tag|
-      contacts_with_tag = Contact.joins(conversations: :conversation_tags)
-        .where(conversation_tags: { tag_id: tag.id }, contacts: { account_id: account.id })
-        .distinct
-
-      {
-        id:       tag.id,
-        name:     tag.name,
-        color:    tag.color,
-        count:    contacts_with_tag.count,
-        contacts: contacts_with_tag.map do |c|
-          {
-            id:    c.id,
-            name:  c.name.presence || "#{c.first_name} #{c.last_name}".strip,
-            phone: c.phone,
-            temperature: c.temperature,
-            source: c.source
-          }
-        end
-      }
+      { id: tag.id, name: tag.name, color: tag.color, count: counts[tag.id] || 0 }
     end
 
     render json: { tags: data }
@@ -88,7 +87,7 @@ class ReportsController < ApplicationController
 
     case type
     when 'leads'
-      rows = account.contacts.where(created_at: period).order(:created_at)
+      rows = account.contacts.includes(:user).where(created_at: period).order(:created_at)
       csv  = generate_csv(['ID', 'Nome', 'Telefone', 'Email', 'Temperatura', 'Origem', 'Intenção', 'Status', 'Atendente', 'Criado em'],
         rows.map { |c|
           agent = c.user ? "#{c.user.first_name} #{c.user.last_name}".strip : 'Não atribuído'

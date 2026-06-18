@@ -3,6 +3,7 @@ class Account < ApplicationRecord
   has_many :contacts, dependent: :destroy
   has_many :conversations, dependent: :destroy
   has_many :properties, dependent: :destroy
+  has_many :condominiums, dependent: :destroy
   has_many :support_tickets, dependent: :destroy
   has_many :notifications, dependent: :destroy
   has_many :tags, dependent: :destroy

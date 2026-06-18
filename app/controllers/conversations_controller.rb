@@ -2,9 +2,15 @@ class ConversationsController < ApplicationController
   before_action :authenticate_user!
 
   def index
+    page  = (params[:page] || 1).to_i
+    limit = (params[:per_page] || 100).to_i.clamp(1, 500)
+
     conversations = current_user.account.conversations
       .includes(:user, :tags, messages: { attachment_attachment: :blob }, contact: { notes: :user })
-    users_hash = User.where(account_id: current_user.account_id).index_by(&:id)
+      .order(last_activity_at: :desc)
+      .offset((page - 1) * limit).limit(limit)
+
+    users_hash = current_user.account.users.index_by(&:id)
     render json: conversations.map { |conv| format_conversation(conv, users_hash) }
   end
 
@@ -12,13 +18,13 @@ class ConversationsController < ApplicationController
     conversation = current_user.account.conversations
       .includes(:user, :tags, messages: { attachment_attachment: :blob }, contact: { notes: :user })
       .find(params[:id])
-    users_hash = User.where(account_id: current_user.account_id).index_by(&:id)
+    users_hash = current_user.account.users.index_by(&:id)
     render json: format_conversation(conversation, users_hash)
   end
 
   def update
     conversation = current_user.account.conversations.includes(:tags).find(params[:id])
-    users_hash = User.where(account_id: current_user.account_id).index_by(&:id)
+    users_hash = current_user.account.users.index_by(&:id)
     old_user_id = conversation.user_id
 
     if conversation.update(conversation_params)
@@ -119,7 +125,7 @@ class ConversationsController < ApplicationController
     PROMPT
 
     begin
-      api_key = GlobalSetting.find_by(key: 'openai_api_key')&.value.presence || ENV['OPENAI_API_KEY']
+      api_key = GlobalSetting.fetch('openai_api_key').presence || ENV['OPENAI_API_KEY']
       client = OpenAI::Client.new(access_token: api_key)
       
       response = client.chat(
