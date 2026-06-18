@@ -1,41 +1,19 @@
 version: "3.7"
 
-## ================================================================
-## CRM IMOBILIÁRIO — PORTAINER STACK (Docker Swarm + Traefik)
-## ================================================================
-## Pré-requisitos no Portainer antes de subir:
-##   docker network create --driver overlay --attachable inoovawebpro  (se não existir)
-##   docker volume create crm_postgres_data
-##   docker volume create crm_redis_data
-##   docker volume create crm_baileys_storage
-##   docker volume create crm_rails_storage
-## ================================================================
-
 services:
 
   ## --------------------------- BANCO DE DADOS --------------------------- ##
 
   crm_db:
     image: postgres:17-alpine
-
     environment:
       - POSTGRES_USER=crm
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_PASSWORD=BF4z3gWbb49Z2mVI2C6KCQQfWepz9AFDNxL5APHG4JF0VFyIZ9ndE9l4taAZFzP7
       - POSTGRES_DB=crm_production
-
     volumes:
       - crm_postgres_data:/var/lib/postgresql/data
-
     networks:
       - inoovawebpro
-
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U crm"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
     deploy:
       mode: replicated
       replicas: 1
@@ -51,14 +29,11 @@ services:
 
   crm_redis:
     image: redis:7-alpine
-    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
-
+    command: redis-server --requirepass 7FfMlpAqDhaOuKhraF76TqW3AIEz7AGtS9QSjgJzEFelEmidkMztDNVZB6Z3mwGO --appendonly yes
     volumes:
       - crm_redis_data:/data
-
     networks:
       - inoovawebpro
-
     deploy:
       mode: replicated
       replicas: 1
@@ -77,24 +52,20 @@ services:
     command:
       - sh
       - "-c"
-      - "bun manage-api-keys create user ${BAILEYS_API_KEY} && bun start"
-
+      - "bun manage-api-keys create user inoovaweb2025 && bun start"
     environment:
       - NODE_ENV=production
       - PORT=3025
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@crm_redis:6379/1
+      - REDIS_URL=redis://:7FfMlpAqDhaOuKhraF76TqW3AIEz7AGtS9QSjgJzEFelEmidkMztDNVZB6Z3mwGO@crm_redis:6379/1
       - LOG_LEVEL=warn
       - BAILEYS_LOG_LEVEL=error
-      - BAILEYS_PROVIDER_DEFAULT_API_KEY=${BAILEYS_API_KEY}
+      - BAILEYS_PROVIDER_DEFAULT_API_KEY=inoovaweb2025
       - IGNORE_GROUP_MESSAGES=true
       - IGNORE_STATUS_MESSAGES=true
-
     volumes:
       - crm_baileys_storage:/app/storage
-
     networks:
       - inoovawebpro
-
     deploy:
       mode: replicated
       replicas: 1
@@ -112,29 +83,24 @@ services:
     image: ghcr.io/balbiss/crm-backend:latest
     command: >
       bash -c "bundle exec rails db:prepare && bundle exec rails server -b 0.0.0.0 -p 80"
-
     environment:
       - RAILS_ENV=production
-      - DATABASE_URL=postgres://crm:${POSTGRES_PASSWORD}@crm_db:5432/crm_production
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@crm_redis:6379/0
-      - RAILS_MASTER_KEY=${RAILS_MASTER_KEY}
-      - SECRET_KEY_BASE=${SECRET_KEY_BASE}
-      - API_HOST=${BACKEND_URL}
-      - FRONTEND_URL=${FRONTEND_URL}
+      - DATABASE_URL=postgres://crm:BF4z3gWbb49Z2mVI2C6KCQQfWepz9AFDNxL5APHG4JF0VFyIZ9ndE9l4taAZFzP7@crm_db:5432/crm_production
+      - REDIS_URL=redis://:7FfMlpAqDhaOuKhraF76TqW3AIEz7AGtS9QSjgJzEFelEmidkMztDNVZB6Z3mwGO@crm_redis:6379/0
+      - RAILS_MASTER_KEY=ff3afee935c0606bd002c728d250e500
+      - SECRET_KEY_BASE=3309a4a9ddf5cabe32bd550ac6f1731b3c0a2bd4a7d5eae963bedd2240627391e5c19e6c9911131389c8eb9ed9fdbc852808d7f14afb493c340d1fb8b01a0596
+      - API_HOST=https://api-crmchat.visitaia.com.br
+      - FRONTEND_URL=https://crmchat.visitaia.com.br
       - BAILEYS_API_URL=http://crm_baileys:3025
-      - BAILEYS_API_KEY=${BAILEYS_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - APP_NAME=${APP_NAME}
+      - BAILEYS_API_KEY=inoovaweb2025
+      - APP_NAME=VisitaIA CRM
       - RAILS_LOG_TO_STDOUT=true
       - RAILS_SERVE_STATIC_FILES=true
       - TZ=America/Sao_Paulo
-
     volumes:
       - crm_rails_storage:/rails/storage
-
     networks:
       - inoovawebpro
-
     deploy:
       mode: replicated
       replicas: 1
@@ -163,25 +129,20 @@ services:
   crm_worker:
     image: ghcr.io/balbiss/crm-backend:latest
     command: bundle exec rails jobs:work
-
     environment:
       - RAILS_ENV=production
-      - DATABASE_URL=postgres://crm:${POSTGRES_PASSWORD}@crm_db:5432/crm_production
-      - REDIS_URL=redis://:${REDIS_PASSWORD}@crm_redis:6379/0
-      - RAILS_MASTER_KEY=${RAILS_MASTER_KEY}
-      - SECRET_KEY_BASE=${SECRET_KEY_BASE}
+      - DATABASE_URL=postgres://crm:BF4z3gWbb49Z2mVI2C6KCQQfWepz9AFDNxL5APHG4JF0VFyIZ9ndE9l4taAZFzP7@crm_db:5432/crm_production
+      - REDIS_URL=redis://:7FfMlpAqDhaOuKhraF76TqW3AIEz7AGtS9QSjgJzEFelEmidkMztDNVZB6Z3mwGO@crm_redis:6379/0
+      - RAILS_MASTER_KEY=ff3afee935c0606bd002c728d250e500
+      - SECRET_KEY_BASE=3309a4a9ddf5cabe32bd550ac6f1731b3c0a2bd4a7d5eae963bedd2240627391e5c19e6c9911131389c8eb9ed9fdbc852808d7f14afb493c340d1fb8b01a0596
       - BAILEYS_API_URL=http://crm_baileys:3025
-      - BAILEYS_API_KEY=${BAILEYS_API_KEY}
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - BAILEYS_API_KEY=inoovaweb2025
       - RAILS_LOG_TO_STDOUT=true
       - TZ=America/Sao_Paulo
-
     volumes:
       - crm_rails_storage:/rails/storage
-
     networks:
       - inoovawebpro
-
     deploy:
       mode: replicated
       replicas: 1
@@ -197,19 +158,16 @@ services:
 
   crm_frontend:
     image: ghcr.io/balbiss/crm-frontend:latest
-
     environment:
-      - API_URL=${BACKEND_URL}
-      - APP_NAME=${APP_NAME}
-      - APP_LOGO_URL=${APP_LOGO_URL}
-      - APP_PRIMARY_COLOR=${APP_PRIMARY_COLOR}
-      - APP_ACCENT_COLOR=${APP_ACCENT_COLOR}
-      - APP_SUPPORT_EMAIL=${APP_SUPPORT_EMAIL}
-      - APP_FOOTER_TEXT=${APP_FOOTER_TEXT}
-
+      - API_URL=https://api-crmchat.visitaia.com.br
+      - APP_NAME=VisitaIA CRM
+      - APP_LOGO_URL=
+      - APP_PRIMARY_COLOR=#1f93ff
+      - APP_ACCENT_COLOR=#8b5cf6
+      - APP_SUPPORT_EMAIL=suporte@visitaia.com.br
+      - APP_FOOTER_TEXT=© 2025 VisitaIA. Todos os direitos reservados.
     networks:
       - inoovawebpro
-
     deploy:
       mode: replicated
       replicas: 1
@@ -237,17 +195,9 @@ services:
 
 volumes:
   crm_postgres_data:
-    external: true
-    name: crm_postgres_data
   crm_redis_data:
-    external: true
-    name: crm_redis_data
   crm_baileys_storage:
-    external: true
-    name: crm_baileys_storage
   crm_rails_storage:
-    external: true
-    name: crm_rails_storage
 
 networks:
   inoovawebpro:
