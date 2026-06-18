@@ -23,11 +23,19 @@ class ConversationsController < ApplicationController
   end
 
   def update
-    conversation = current_user.account.conversations.includes(:tags).find(params[:id])
+    conversation = current_user.account.conversations.includes(:tags, :contact, :inbox).find(params[:id])
     users_hash = current_user.account.users.index_by(&:id)
     old_user_id = conversation.user_id
+    new_status_param = params.dig(:conversation, :status)
 
     if conversation.update(conversation_params)
+      # Side effects por mudança de status
+      if new_status_param == 'resolved'
+        handle_resolve_side_effects(conversation)
+      elsif new_status_param == 'open'
+        conversation.update_column(:snoozed_until, nil) if conversation.snoozed_until.present?
+      end
+
       new_user_id = conversation.user_id
       if new_user_id != old_user_id
         # Notifica o atendente que recebeu o lead
@@ -191,7 +199,7 @@ class ConversationsController < ApplicationController
   private
 
   def conversation_params
-    params.require(:conversation).permit(:status, :user_id)
+    params.require(:conversation).permit(:status, :user_id, :snoozed_until)
   end
 
   def format_conversation(conv, users_hash = {})
@@ -260,7 +268,68 @@ class ConversationsController < ApplicationController
       assignee: conv.user&.first_name,
       assignee_id: conv.user_id,
       status: conv.status,
+      snoozed_until: conv.snoozed_until,
       tags: conv.tags.map { |t| { id: t.id, name: t.name, color: t.color } }
     }
+  end
+
+  def handle_resolve_side_effects(conversation)
+    contact = conversation.contact
+    inbox   = conversation.inbox
+
+    # Pausa a IA por 30 dias (permanente para fins práticos)
+    jid = contact.jid.presence || contact.phone
+    if jid.present? && inbox.present?
+      Rails.cache.write("ai_paused_#{inbox.id}_#{jid}", Time.current.to_i, expires_in: 30.days)
+    end
+
+    # Aplica tag agente_off
+    tag = conversation.account.tags.find_or_create_by!(name: 'agente_off') { |t| t.color = '#f97316' }
+    unless conversation.tags.any? { |t| t.id == tag.id }
+      conversation.tags << tag
+    end
+
+    # Move o lead no kanban
+    kanban_stage = params[:kanban_stage].presence
+    contact.update!(status: kanban_stage) if kanban_stage.present?
+
+    # Envia mensagem de encerramento
+    if params[:send_closing_message].to_s == 'true' && params[:closing_message_text].present?
+      begin
+        recipient = contact.jid.presence || contact.phone
+        baileys_id = WhatsappBaileysService.new(inbox).send_message(recipient, params[:closing_message_text]) if inbox.present? && recipient.present?
+        closing_msg = Message.create!(
+          account:     conversation.account,
+          conversation: conversation,
+          text:        params[:closing_message_text],
+          sender_type: 'User',
+          sender_id:   current_user.id,
+          source_id:   baileys_id.presence || "closing_#{SecureRandom.hex(8)}",
+          status:      :delivered
+        )
+        ActionCable.server.broadcast('conversations_channel', {
+          event:           'message_created',
+          conversation_id: conversation.id,
+          message: {
+            id:         closing_msg.id,
+            senderType: 'agent',
+            text:       closing_msg.text,
+            timestamp:  closing_msg.created_at.iso8601,
+            status:     'delivered',
+            agentName:  current_user.first_name
+          }
+        })
+      rescue => e
+        Rails.logger.error("Erro ao enviar mensagem de encerramento: #{e.message}")
+      end
+    end
+
+    # Broadcast das tags atualizadas
+    updated_tags = conversation.tags.reload.map { |t| { id: t.id, name: t.name, color: t.color } }
+    ActionCable.server.broadcast('conversations_channel', {
+      event:           'conversation_tags_updated',
+      conversation_id: conversation.id,
+      tags:            updated_tags
+    })
   end
 end

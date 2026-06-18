@@ -281,13 +281,36 @@ module Webhooks
         # ===== MOTOR DE INTELIGÊNCIA ARTIFICIAL =====
         if inbox.ai_enabled
           is_paused = Rails.cache.read("ai_paused_#{inbox.id}_#{remote_jid}")
-          
+
           if is_paused
             Rails.logger.info("IA pulou atendimento para #{remote_jid} porque está em cooldown (Humano assumiu).")
-          elsif conversation.status != 'open'
-            # Se a conversa está resolvida/fechada, não responde. A menos que a gente queira reabrir.
-            # Por enquanto, vamos assumir se estiver 'open' (ou unassigned)
+          elsif conversation.status == 'resolved'
+            # Cliente voltou depois de conversa encerrada — reabrir para o corretor
+            conversation.update!(status: :open)
+            # Pausa a IA 30 min para o corretor ter prioridade no atendimento do retorno
+            Rails.cache.write("ai_paused_#{inbox.id}_#{remote_jid}", Time.current.to_i, expires_in: 30.minutes)
+            ActionCable.server.broadcast('conversations_channel', {
+              event:        'conversation_updated',
+              conversation: { id: conversation.id, status: 'open', snoozed_until: nil }
+            })
+            Rails.logger.info("Conversa #{conversation.id} reaberta automaticamente (cliente retornou após encerramento).")
           else
+            # Conversa open ou snoozed: a IA deve responder
+            if conversation.status == 'snoozed'
+              # Cliente enviou mensagem durante o adiamento — cancelar snooze
+              conversation.update!(status: :open, snoozed_until: nil)
+              ActionCable.server.broadcast('conversations_channel', {
+                event:           'snooze_expired',
+                conversation_id: conversation.id,
+                contact_name:    contact.name.presence || contact.phone,
+                reason:          'client_message'
+              })
+              ActionCable.server.broadcast('conversations_channel', {
+                event:        'conversation_updated',
+                conversation: { id: conversation.id, status: 'open', snoozed_until: nil }
+              })
+            end
+
             # Lógica de Debounce (Agrupamento de 8 segundos)
             debounce_key = "debounce_ai_#{inbox.id}_#{remote_jid}"
             current_time = Time.now.to_f
@@ -297,22 +320,22 @@ module Webhooks
             Thread.new do
               begin
                 sleep 8 # Espera 8 segundos para agrupar mensagens sucessivas
-                
+
                 # Se o valor no cache ainda for o mesmo, significa que não chegou nova mensagem nesses 8s
                 if Rails.cache.read(debounce_key) == current_time
                   Rails.logger.info("Iniciando AiAssistantService para a conversa #{conversation.id}")
-                  
+
                   # Chama a OpenAI e resolve as tools
                   ai_service = AiAssistantService.new(inbox, conversation)
                   ai_response_text = ai_service.process_message
-                  
+
                   if ai_response_text.present?
                     # Avisamos ao sistema que a IA está respondendo para não dar trigger no fromMe
                     Rails.cache.write("ai_is_replying_#{inbox.id}_#{remote_jid}", true, expires_in: 60.seconds)
 
                     # Separar resposta em múltiplos balões (parágrafos)
                     paragraphs = ai_response_text.is_a?(Array) ? ai_response_text : ai_response_text.split("\n\n").reject(&:blank?)
-                    
+
                     # Usa o JID @s.whatsapp.net para presence (LID não mostra digitando no WhatsApp)
                     presence_jid = (remote_jid_alt.presence && remote_jid_alt.include?('@s.whatsapp.net')) ? remote_jid_alt : remote_jid
 
@@ -330,7 +353,7 @@ module Webhooks
 
                       # Para de digitar
                       WhatsappBaileysService.new(inbox).send_presence_update(presence_jid, 'paused')
-                      
+
                       # Envia a resposta de volta pro WhatsApp e captura o ID do Baileys
                       baileys_id = WhatsappBaileysService.new(inbox).send_message(remote_jid, paragraph.strip)
 
