@@ -86,7 +86,7 @@ class InboxesController < ApplicationController
   end
 
   def generate_prompt
-    data = params.require(:prompt_data).permit(:identity, :institutional, :faq, :sdr_rules, :routing_rules, :ai_role, :allow_scheduling, :use_whatsapp_name, :emoji_usage, :prohibited_actions)
+    data = params.require(:prompt_data).permit(:identity, :institutional, :faq, :greeting_message, :sdr_rules, :routing_rules, :ai_role, :allow_scheduling, :use_whatsapp_name, :emoji_usage, :prohibited_actions)
     
     system_prompt = <<~PROMPT
       Você é um Engenheiro de Prompts especialista em IA para Imobiliárias.
@@ -106,20 +106,22 @@ class InboxesController < ApplicationController
                         end
                         
     prohibitions_instruction = data[:prohibited_actions].present? ? "AÇÕES ESTRITAMENTE PROIBIDAS (NUNCA FAÇA ISSO): #{data[:prohibited_actions]}" : "AÇÕES PROIBIDAS: Nenhuma extra."
+    greeting_instruction = data[:greeting_message].present? ? "MENSAGEM DE SAUDAÇÃO EXATA (Primeiro Contato): Use exatamente esta mensagem quando o cliente entrar em contato pela primeira vez: \"#{data[:greeting_message]}\"" : "MENSAGEM DE SAUDAÇÃO: Crie uma saudação natural e acolhedora alinhada com a identidade e tom de voz definidos acima."
 
     user_content = <<~USER
       Crie o prompt usando estas diretrizes:
       1. Identidade e Tom de Voz: #{data[:identity]}
       2. Institucional (Horários/Diferenciais): #{data[:institutional]}
       3. FAQ: #{data[:faq]}
-      4. Modo de Atuação: #{role_instruction}
-      5. Regras de Agendamento: #{schedule_instruction}
-      6. Tratamento de Contato: #{name_instruction}
-      7. Estilo de Comunicação: #{emoji_instruction}
-      8. Linhas Vermelhas: #{prohibitions_instruction}
-      9. Regras de SDR (Dados obrigatórios para coletar): #{data[:sdr_rules]}
-      10. Regras de Transbordo (Quando transferir para humano ou agendar visita): #{data[:routing_rules]}
-      
+      4. #{greeting_instruction}
+      5. Modo de Atuação: #{role_instruction}
+      6. Regras de Agendamento: #{schedule_instruction}
+      7. Tratamento de Contato: #{name_instruction}
+      8. Estilo de Comunicação: #{emoji_instruction}
+      9. Linhas Vermelhas: #{prohibitions_instruction}
+      10. Regras de SDR (Dados obrigatórios para coletar): #{data[:sdr_rules]}
+      11. Regras de Transbordo (Quando transferir para humano ou agendar visita): #{data[:routing_rules]}
+
       Certifique-se de que o prompt instrua a IA a ser natural, não robótica, e seguir rigorosamente as restrições de agendamento, atendimento e as regras estritas de nunca perguntar o telefone.
     USER
 
