@@ -18,12 +18,19 @@ class AgentNotificationService
     baileys = WhatsappBaileysService.new(inbox)
     return unless baileys.connected?
 
-    baileys.send_message(@agent.phone, build_message)
+    baileys.send_message(normalize_phone(@agent.phone), build_message)
   rescue => e
     Rails.logger.error("AgentNotificationService error: #{e.message}")
   end
 
   private
+
+  def normalize_phone(phone)
+    digits = phone.gsub(/\D/, '')
+    # Se não começa com 55 e tem 10 ou 11 dígitos, é número BR sem código do país
+    digits = "55#{digits}" if digits.length <= 11 && !digits.start_with?('55')
+    digits
+  end
 
   def build_message
     contact     = @conversation.contact
