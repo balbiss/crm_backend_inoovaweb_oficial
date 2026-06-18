@@ -81,6 +81,42 @@ class ReportsController < ApplicationController
     render json: { tags: data }
   end
 
+  def performance
+    # Tendência de conversas — últimos 7 dias
+    conv_trend = (6.days.ago.to_date..Date.current).map do |date|
+      range = date.beginning_of_day..date.end_of_day
+      {
+        date: date.strftime('%d/%m'),
+        opened:   account.conversations.where(created_at: range).count,
+        resolved: account.conversations.where(status: :resolved).where('updated_at BETWEEN ? AND ?', range.first, range.last).count
+      }
+    end
+
+    # Tempo médio de primeiro atendimento (em minutos)
+    sample_convs = account.conversations.includes(:messages).order(created_at: :desc).limit(200)
+    times = sample_convs.filter_map do |conv|
+      msgs = conv.messages.sort_by(&:created_at)
+      first_inbound  = msgs.find { |m| m.sender_type == 'Contact' }
+      first_response = msgs.find { |m| m.sender_type != 'Contact' && first_inbound && m.created_at > first_inbound.created_at }
+      next unless first_inbound && first_response
+      ((first_response.created_at - first_inbound.created_at) / 60.0).round(1)
+    end
+    avg_response = times.empty? ? nil : (times.sum / times.size).round(1)
+
+    # Top imóveis mais consultados pela IA
+    top_properties = account.properties
+      .where('search_count > 0')
+      .order(search_count: :desc)
+      .limit(5)
+      .map { |p| { id: p.id, title: p.title.presence || p.property_type, neighborhood: p.neighborhood, price: p.price, search_count: p.search_count } }
+
+    render json: {
+      conv_trend: conv_trend,
+      avg_response_time_minutes: avg_response,
+      top_properties: top_properties
+    }
+  end
+
   def export
     type   = params[:type] || 'leads'
     period = parse_period

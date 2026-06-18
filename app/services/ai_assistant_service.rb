@@ -306,6 +306,7 @@ class AiAssistantService
       prop_query = prop_query.where("bedrooms >= ?", args['bedrooms']) if args['bedrooms'].present?
       prop_query = prop_query.where("price <= ?", args['max_price']) if args['max_price'].present?
       prop_results = prop_query.limit(3)
+      prop_results.each { |p| p.increment!(:search_count) rescue nil }
 
       # Busca em Condomínios (Condominia) — exclui esgotados
       condo_query = Condominium.where(account_id: account_id).where.not(status: 'Esgotado')

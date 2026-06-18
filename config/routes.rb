@@ -4,6 +4,7 @@ Rails.application.routes.draw do
     get :by_agent
     get :by_tag
     get :export
+    get :performance
   end
   resources :properties
   resources :condominiums
