@@ -175,15 +175,15 @@ class AiAssistantService
       type: "function",
       function: {
         name: "create_appointment",
-        description: "Agenda uma visita para o lead em um imóvel específico.",
+        description: "Agenda uma visita para o lead em um imóvel avulso (Property). Use o ID numérico retornado por search_properties. Não use IDs de condomínios.",
         parameters: {
           type: "object",
           properties: {
-            property_id: { type: "integer", description: "ID do imóvel" },
-            date: { type: "string", description: "Data desejada (YYYY-MM-DD)" },
-            time: { type: "string", description: "Hora desejada (HH:MM)" }
+            property_id: { type: "integer", description: "ID numérico do imóvel avulso (retornado por search_properties como 'ID X:')" },
+            date: { type: "string", description: "Data desejada no formato YYYY-MM-DD (ex: 2026-06-19)" },
+            time: { type: "string", description: "Hora desejada no formato HH:MM (ex: 10:00). Sempre informe o horário combinado com o cliente." }
           },
-          required: ["property_id", "date"]
+          required: ["property_id", "date", "time"]
         }
       }
     }
@@ -349,25 +349,33 @@ class AiAssistantService
       end
 
     when "create_appointment"
+      visit_time = args['time'].presence || '10:00'
+      end_time_str = begin
+        (Time.parse(visit_time) + 1.hour).strftime('%H:%M')
+      rescue
+        '11:00'
+      end
+
+      property_id = args['property_id']
+      property = Property.find_by(id: property_id, account_id: account_id)
+
       Appointment.create!(
         account_id: account_id,
         contact_id: contact.id,
-        property_id: args['property_id'],
+        property_id: property&.id,
         appointment_date: args['date'],
-        start_time: args['time'],
-        end_time: (Time.parse(args['time']) + 1.hour).strftime('%H:%M'),
+        start_time: visit_time,
+        end_time: end_time_str,
         status: 'Agendado'
       )
-      
-      property = Property.find_by(id: args['property_id'], account_id: account_id)
-      
+
       property_desc = "Visita Agendada"
       if property
         price_str = property.price ? "R$ #{property.price.to_i}" : ""
         bairro_str = property.neighborhood.present? ? " - #{property.neighborhood}" : ""
         property_desc = "Visita: #{property.title || property.property_type}#{bairro_str} #{price_str}".strip
       end
-      
+
       contact.update!(
         status: 'visit',
         intention: property_desc
