@@ -17,8 +17,7 @@ class InboxesController < ApplicationController
 
     if @inbox.save
       if @inbox.provider == 'baileys'
-        # Assume our app is running on localhost:3000 for webhooks locally
-        webhook_url = "http://web:3000/webhooks/baileys"
+        webhook_url = "#{ENV.fetch('API_HOST', 'http://localhost:3000')}/webhooks/baileys"
         service = WhatsappBaileysService.new(@inbox)
         # Attempt to create the connection in the external Baileys API
         service.create_connection(webhook_url) rescue StandardError
@@ -47,7 +46,7 @@ class InboxesController < ApplicationController
       unless %w[connecting open].include?(status)
         baileys.delete_connection rescue nil
         sleep 0.5
-        webhook_url = "http://web:3000/webhooks/baileys"
+        webhook_url = "#{ENV.fetch('API_HOST', 'http://localhost:3000')}/webhooks/baileys"
         baileys.create_connection(webhook_url) rescue nil
         sleep 2.0
         qr = baileys.fetch_qr_code
