@@ -127,6 +127,7 @@ services:
         - traefik.http.routers.crm_backend.service=crm_backend
         - traefik.http.services.crm_backend.loadbalancer.server.port=80
         - traefik.http.services.crm_backend.loadbalancer.passHostHeader=1
+        - traefik.http.services.crm_backend.loadbalancer.responseForwarding.flushInterval=100ms
 
   ## --------------------------- WORKER (JOBS) --------------------------- ##
 
