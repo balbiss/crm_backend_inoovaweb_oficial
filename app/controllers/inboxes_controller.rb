@@ -2,6 +2,9 @@ require_relative '../services/whatsapp_baileys_service'
 
 class InboxesController < ApplicationController
   before_action :set_inbox, only: %i[ show update destroy qr_code status generate_prompt ]
+  # Corretores podem ler inboxes e ver status (para filtrar conversas por canal).
+  # Apenas o dono gerencia: criar, editar, remover, escanear QR, gerar prompt de IA.
+  before_action :require_owner!, only: %i[ create update destroy qr_code generate_prompt ]
 
   def index
     @inboxes = Inbox.all

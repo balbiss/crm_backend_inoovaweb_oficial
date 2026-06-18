@@ -1,5 +1,8 @@
 class AgentsController < ApplicationController
   before_action :set_agent, only: %i[ show update destroy block unblock toggle_roundrobin ]
+  # Leitura liberada para todos (corretores precisam ver a equipe para atribuição).
+  # Escrita restrita ao dono: criar, editar, remover, bloquear, configurar rodízio.
+  before_action :require_owner!, only: %i[ create update destroy block unblock toggle_roundrobin ]
 
   # GET /agents
   def index

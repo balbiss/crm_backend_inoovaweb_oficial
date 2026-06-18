@@ -1,6 +1,8 @@
 class ReportsController < ApplicationController
   before_action :authenticate_user!
-  before_action :require_owner!
+  # overview e by_tag: todos os usuários (corretor vê o funil geral da conta).
+  # by_agent, performance e export: somente dono — dados sensíveis da equipe.
+  before_action :require_owner!, only: %i[ by_agent performance export ]
 
   def overview
     period = parse_period
@@ -160,12 +162,6 @@ class ReportsController < ApplicationController
 
   def account
     current_user.account
-  end
-
-  def require_owner!
-    unless current_user.empresa? || current_user.admin?
-      render json: { error: 'Acesso restrito ao dono da imobiliária.' }, status: :forbidden
-    end
   end
 
   def parse_period

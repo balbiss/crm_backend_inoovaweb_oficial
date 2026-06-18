@@ -11,4 +11,16 @@ class ApplicationController < ActionController::API
       render json: { error: 'subscription_required', message: 'Seu período de teste expirou ou sua assinatura está inativa.' }, status: :payment_required
     end
   end
+
+  # Garante que apenas donos (empresa/admin) acessem o endpoint.
+  # Chame via before_action :require_owner! nos controllers filhos.
+  def require_owner!
+    unless owner?
+      render json: { error: 'forbidden', message: 'Acesso restrito ao administrador da imobiliária.' }, status: :forbidden
+    end
+  end
+
+  def owner?
+    current_user&.empresa? || current_user&.admin?
+  end
 end
