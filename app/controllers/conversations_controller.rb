@@ -34,6 +34,11 @@ class ConversationsController < ApplicationController
             contact_name: conversation.contact.name.presence || conversation.contact.phone,
             assigned_by: 'manual'
           })
+          AgentNotificationService.notify_assignment(
+            agent:        new_agent,
+            conversation: conversation.reload,
+            assigned_by:  'manual'
+          )
         end
 
         tag = current_user.account.tags.find_or_create_by!(name: 'com_atendente') { |t| t.color = '#8b5cf6' }

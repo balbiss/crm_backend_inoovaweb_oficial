@@ -27,6 +27,11 @@ class RoundRobinAssignmentService
 
     if assigned_agent
       broadcast_assignment(conversation, assigned_agent)
+      AgentNotificationService.notify_assignment(
+        agent:       assigned_agent,
+        conversation: conversation,
+        assigned_by: 'rodizio'
+      )
     end
 
     assigned_agent
