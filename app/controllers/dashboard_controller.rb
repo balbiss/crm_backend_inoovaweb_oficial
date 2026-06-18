@@ -48,6 +48,30 @@ class DashboardController < ApplicationController
 
     leads_by_source = contacts_scope.where.not(source: [nil, '']).group(:source).count
 
+    # Leads atribuídos hoje — conversas novas atribuídas a este usuário (ou a qualquer um, se dono)
+    today_conv_scope = is_owner \
+      ? account.conversations.where(created_at: today.beginning_of_day..today.end_of_day) \
+      : account.conversations.where(user_id: uid, created_at: today.beginning_of_day..today.end_of_day)
+
+    today_assigned_leads = today_conv_scope
+      .includes(:contact)
+      .order(created_at: :desc)
+      .limit(20)
+      .map do |conv|
+        c = conv.contact
+        next unless c
+        {
+          conversation_id: conv.id,
+          contact_name:    c.name.presence || c.phone || 'Desconhecido',
+          contact_phone:   c.phone,
+          temperature:     c.temperature,
+          kanban_status:   c.status,
+          intention:       c.intention&.truncate(80),
+          assigned_to:     conv.user_id == uid ? nil : account.users.find_by(id: conv.user_id)&.first_name,
+          created_at:      conv.created_at
+        }
+      end.compact
+
     render json: {
       is_owner: is_owner,
       kpis: {
@@ -58,7 +82,8 @@ class DashboardController < ApplicationController
         conversations:   { open: conv_open, resolved: conv_resolved, today: conv_today, with_human: with_human },
         appointments:    { total: appt_total, today: appt_today, upcoming: appt_upcoming, done: appt_done }
       },
-      leads_by_source: leads_by_source
+      leads_by_source:      leads_by_source,
+      today_assigned_leads: today_assigned_leads
     }
   end
 end
