@@ -6,9 +6,19 @@ class DashboardController < ApplicationController
     today      = Date.current
 
     # Scopes filtrados por papel
-    contacts_scope = is_owner ? account.contacts : account.contacts.where(user_id: uid)
-    conv_scope     = is_owner ? account.conversations : account.conversations.where(user_id: uid)
-    appt_scope     = is_owner ? Appointment.where(account_id: account.id) : Appointment.where(account_id: account.id, user_id: uid)
+    # Corretor: contatos derivados das conversas atribuídas a ele (não user_id do contato)
+    if is_owner
+      contacts_scope = account.contacts
+      conv_scope     = account.conversations
+      appt_scope     = Appointment.where(account_id: account.id)
+    else
+      my_contact_ids = account.conversations.where(user_id: uid).pluck(:contact_id).uniq
+      contacts_scope = account.contacts.where(id: my_contact_ids)
+      conv_scope     = account.conversations.where(user_id: uid)
+      # Agendamentos atribuídos ao corretor OU criados pela IA para seus contatos
+      appt_scope     = Appointment.where(account_id: account.id)
+                                  .where('user_id = ? OR (user_id IS NULL AND contact_id IN (?))', uid, my_contact_ids.presence || [0])
+    end
 
     # Batch contacts: 3 GROUP BY queries instead of 9 individual COUNTs
     total_contacts  = contacts_scope.count
