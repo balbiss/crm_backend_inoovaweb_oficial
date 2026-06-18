@@ -7,7 +7,12 @@ Rails.application.routes.draw do
   end
   resources :properties
   resources :condominiums
-  resources :appointments
+  resources :appointments do
+    collection do
+      get :report
+      get :export
+    end
+  end
   resources :agents do
     member do
       patch :block

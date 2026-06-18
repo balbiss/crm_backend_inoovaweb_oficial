@@ -1,6 +1,76 @@
 class AppointmentsController < ApplicationController
   before_action :set_appointment, only: %i[ show update destroy ]
 
+  # GET /appointments/report
+  def report
+    scope  = base_scope.includes(:contact, :property, :user)
+    period = parse_period(params[:period])
+    scoped = scope.where(appointment_date: period)
+
+    by_status = {
+      pending:   scoped.where(status: %w[pending agendado]).count,
+      confirmed: scoped.where(status: %w[confirmed confirmado]).count,
+      completed: scoped.where(status: %w[completed realizado]).count,
+      cancelled: scoped.where(status: %w[cancelled cancelado]).count
+    }
+
+    by_agent = if owner?
+      scoped.joins(:user).group('users.first_name', 'users.last_name', 'users.id')
+            .select('users.id as uid, users.first_name, users.last_name, COUNT(*) as total,
+                     SUM(CASE WHEN appointments.status IN (\'completed\',\'realizado\') THEN 1 ELSE 0 END) as done')
+            .map { |r| { id: r.uid, name: "#{r.first_name} #{r.last_name}".strip, total: r.total.to_i, done: r.done.to_i } }
+    else
+      nil
+    end
+
+    appointments = scoped.order(appointment_date: :asc).map do |a|
+      {
+        id:               a.id,
+        status:           a.status,
+        appointment_date: a.appointment_date,
+        start_time:       a.start_time,
+        end_time:         a.end_time,
+        contact:          { name: a.contact&.name, phone: a.contact&.phone },
+        property:         { title: a.property&.title },
+        agent:            a.user ? "#{a.user.first_name} #{a.user.last_name}".strip : nil
+      }
+    end
+
+    render json: {
+      is_owner:     owner?,
+      period:       { start: period.first, end: period.last },
+      total:        scoped.count,
+      by_status:    by_status,
+      by_agent:     by_agent,
+      appointments: appointments
+    }
+  end
+
+  # GET /appointments/export
+  def export
+    scope  = base_scope.includes(:contact, :property, :user)
+    period = parse_period(params[:period])
+    rows   = scope.where(appointment_date: period).order(appointment_date: :asc)
+
+    headers_row = ['Data', 'Início', 'Fim', 'Cliente', 'Telefone', 'Imóvel', 'Corretor', 'Status']
+    csv_rows = rows.map do |a|
+      [
+        a.appointment_date&.strftime('%d/%m/%Y'),
+        a.start_time, a.end_time,
+        a.contact&.name, a.contact&.phone,
+        a.property&.title,
+        a.user ? "#{a.user.first_name} #{a.user.last_name}".strip : 'N/A',
+        a.status
+      ]
+    end
+
+    csv = ([headers_row] + csv_rows).map { |r| r.map { |c| "\"#{c.to_s.gsub('"','""')}\"" }.join(';') }.join("\n")
+    send_data "\xEF\xBB\xBF" + csv,
+      filename: "agendamentos_#{Date.current}.csv",
+      type: 'text/csv; charset=utf-8',
+      disposition: 'attachment'
+  end
+
   # GET /appointments
   def index
     if current_user&.role == 'admin' || current_user&.role == 'empresa' || current_user&.permissions&.dig('view_all_appointments')
@@ -54,6 +124,33 @@ class AppointmentsController < ApplicationController
   end
 
   private
+    def owner?
+      current_user.empresa? || current_user.admin?
+    end
+
+    def base_scope
+      account = current_user.account
+      if owner?
+        Appointment.where(account_id: account.id)
+      else
+        Appointment.where(account_id: account.id, user_id: current_user.id)
+      end
+    end
+
+    def parse_period(preset)
+      case preset
+      when 'today' then Date.current.beginning_of_day..Date.current.end_of_day
+      when 'week'  then Date.current.beginning_of_week..Date.current.end_of_week
+      when 'month' then Date.current.beginning_of_month..Date.current.end_of_month
+      when 'custom'
+        s = Date.parse(params[:start_date]) rescue Date.current.beginning_of_month
+        e = Date.parse(params[:end_date])   rescue Date.current
+        s.beginning_of_day..e.end_of_day
+      else
+        Date.current.beginning_of_month..Date.current.end_of_month
+      end
+    end
+
     def set_appointment
       @appointment = Appointment.find(params[:id])
     end
