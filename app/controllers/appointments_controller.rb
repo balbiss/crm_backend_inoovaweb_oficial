@@ -78,13 +78,14 @@ class AppointmentsController < ApplicationController
 
   # GET /appointments
   def index
-    if current_user&.role == 'admin' || current_user&.role == 'empresa' || current_user&.permissions&.dig('view_all_appointments')
-      @appointments = Appointment.includes(:contact, :property).all
-    else
-      @appointments = Appointment.includes(:contact, :property).where(user_id: current_user.id)
+    account_id = current_user.account_id
+    scope = Appointment.includes(:contact, :property).where(account_id: account_id)
+
+    unless owner? || current_user.has_permission?('view_all_appointments')
+      scope = scope.where(user_id: [current_user.id, nil])
     end
-    
-    render json: @appointments.as_json(include: {
+
+    render json: scope.as_json(include: {
       contact: { only: [:name, :phone] },
       property: { only: [:title, :id] }
     })

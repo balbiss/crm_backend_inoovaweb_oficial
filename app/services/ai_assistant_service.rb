@@ -363,6 +363,7 @@ class AiAssistantService
         account_id: account_id,
         contact_id: contact.id,
         property_id: property&.id,
+        user_id: @conversation.user_id,
         appointment_date: args['date'],
         start_time: visit_time,
         end_time: end_time_str,
