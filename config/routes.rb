@@ -1,4 +1,10 @@
 Rails.application.routes.draw do
+  namespace :reports do
+    get :overview
+    get :by_agent
+    get :by_tag
+    get :export
+  end
   resources :properties
   resources :condominiums
   resources :appointments

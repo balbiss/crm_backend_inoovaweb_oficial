@@ -68,13 +68,22 @@ class InboxesController < ApplicationController
   end
 
   def destroy
+    conv_count = @inbox.conversations.count
+    contact_count = @inbox.conversations.joins(:contact).select('contacts.id').distinct.count
+
     begin
       WhatsappBaileysService.new(@inbox).delete_connection
     rescue StandardError => e
       Rails.logger.error("Failed to delete connection in Baileys: #{e.message}")
     end
+
+    # Preserva histórico: conversations ficam com inbox_id = null (dependent: :nullify)
     @inbox.destroy!
-    head :no_content
+
+    head :no_content, headers: {
+      'X-Preserved-Conversations' => conv_count.to_s,
+      'X-Preserved-Contacts' => contact_count.to_s
+    }
   end
 
   def generate_prompt
