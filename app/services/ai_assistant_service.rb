@@ -300,21 +300,21 @@ class AiAssistantService
 
     case name
     when "search_properties"
-      # Busca em Imóveis Avulsos (Properties)
-      prop_query = Property.where(account_id: account_id)
+      # Busca em Imóveis Avulsos (Properties) — apenas disponíveis
+      prop_query = Property.where(account_id: account_id, status: 'Disponível')
       prop_query = prop_query.where("neighborhood ILIKE ?", "%#{args['neighborhood']}%") if args['neighborhood'].present?
       prop_query = prop_query.where("bedrooms >= ?", args['bedrooms']) if args['bedrooms'].present?
       prop_query = prop_query.where("price <= ?", args['max_price']) if args['max_price'].present?
       prop_results = prop_query.limit(3)
 
-      # Busca em Condomínios (Condominia)
-      condo_query = Condominium.where(account_id: account_id)
+      # Busca em Condomínios (Condominia) — exclui esgotados
+      condo_query = Condominium.where(account_id: account_id).where.not(status: 'Esgotado')
       condo_query = condo_query.where("neighborhood ILIKE ?", "%#{args['neighborhood']}%") if args['neighborhood'].present?
       condo_query = condo_query.where("min_price <= ?", args['max_price']) if args['max_price'].present?
       condo_results = condo_query.limit(3)
-      
+
       if prop_results.empty? && condo_results.empty?
-        "Nenhum imóvel encontrado com esses critérios."
+        "Nenhum imóvel disponível encontrado com esses critérios."
       else
         response_texts = []
         if prop_results.any?
@@ -322,6 +322,7 @@ class AiAssistantService
           response_texts += prop_results.map do |p|
             has_photos = p.photos.attached?
             desc = "- ID #{p.id}: #{p.title || p.property_type || 'Imóvel'} em #{p.neighborhood}, #{p.city}. "
+            desc += "Status: #{p.status || 'Disponível'}. "
             desc += "Quartos: #{p.bedrooms || 0} (Suítes: #{p.suites || 0}). Banheiros: #{p.bathrooms || 0}. Vagas: #{p.parking_spots || 0}. "
             desc += "Área: #{p.built_area || p.total_area}m². "
             desc += "Preço: R$ #{p.price || 0}. Transação: #{p.listing_type}. "
@@ -330,18 +331,19 @@ class AiAssistantService
             desc
           end
         end
-        
+
         if condo_results.any?
           response_texts << "Condomínios/Lançamentos:"
           response_texts += condo_results.map do |c|
             desc = "- ID #{c.id}: #{c.name} em #{c.neighborhood}, #{c.city}. "
+            desc += "Status: #{c.status || 'Disponível'}. "
             desc += "Preço: R$ #{c.min_price || 0} a R$ #{c.max_price || 0}. "
             desc += "Lazer: #{c.leisure_features&.truncate(150) || 'Não informado'}. "
             desc += "Estágio de Obra: #{c.construction_progress || 'Não informado'}. "
             desc
           end
         end
-        
+
         response_texts.join("\n")
       end
 
