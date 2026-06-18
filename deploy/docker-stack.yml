@@ -82,7 +82,7 @@ services:
   crm_backend:
     image: ghcr.io/balbiss/crm-backend:latest
     command: >
-      bash -c "until bundle exec rails db:prepare; do echo 'Aguardando banco de dados...'; sleep 5; done && bundle exec rails server -b 0.0.0.0 -p 80"
+      bash -c "until bundle exec rails db:prepare; do echo 'Aguardando banco de dados...'; sleep 5; done && bundle exec rails db:migrate:cache && bundle exec rails db:migrate:queue && bundle exec rails db:migrate:cable && bundle exec rails server -b 0.0.0.0 -p 80"
     environment:
       - RAILS_ENV=production
       - PGHOST=crm_db
