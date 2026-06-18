@@ -85,7 +85,7 @@ services:
       bash -c "until bundle exec rails db:prepare; do echo 'Aguardando banco de dados...'; sleep 5; done && bundle exec rails server -b 0.0.0.0 -p 80"
     environment:
       - RAILS_ENV=production
-      - DATABASE_URL=postgres://crm:BF4z3gWbb49Z2mVI2C6KCQQfWepz9AFDNxL5APHG4JF0VFyIZ9ndE9l4taAZFzP7@crm_db:5432/crm_production
+      - DATABASE_URL=postgresql://crm:BF4z3gWbb49Z2mVI2C6KCQQfWepz9AFDNxL5APHG4JF0VFyIZ9ndE9l4taAZFzP7@crm_db:5432/crm_production
       - REDIS_URL=redis://:7FfMlpAqDhaOuKhraF76TqW3AIEz7AGtS9QSjgJzEFelEmidkMztDNVZB6Z3mwGO@crm_redis:6379/0
       - RAILS_MASTER_KEY=ff3afee935c0606bd002c728d250e500
       - SECRET_KEY_BASE=3309a4a9ddf5cabe32bd550ac6f1731b3c0a2bd4a7d5eae963bedd2240627391e5c19e6c9911131389c8eb9ed9fdbc852808d7f14afb493c340d1fb8b01a0596
@@ -131,7 +131,7 @@ services:
     command: bash -c "sleep 40 && bundle exec rails jobs:work"
     environment:
       - RAILS_ENV=production
-      - DATABASE_URL=postgres://crm:BF4z3gWbb49Z2mVI2C6KCQQfWepz9AFDNxL5APHG4JF0VFyIZ9ndE9l4taAZFzP7@crm_db:5432/crm_production
+      - DATABASE_URL=postgresql://crm:BF4z3gWbb49Z2mVI2C6KCQQfWepz9AFDNxL5APHG4JF0VFyIZ9ndE9l4taAZFzP7@crm_db:5432/crm_production
       - REDIS_URL=redis://:7FfMlpAqDhaOuKhraF76TqW3AIEz7AGtS9QSjgJzEFelEmidkMztDNVZB6Z3mwGO@crm_redis:6379/0
       - RAILS_MASTER_KEY=ff3afee935c0606bd002c728d250e500
       - SECRET_KEY_BASE=3309a4a9ddf5cabe32bd550ac6f1731b3c0a2bd4a7d5eae963bedd2240627391e5c19e6c9911131389c8eb9ed9fdbc852808d7f14afb493c340d1fb8b01a0596
