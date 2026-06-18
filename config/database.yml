@@ -2,10 +2,15 @@ default: &default
   adapter: postgresql
   encoding: unicode
   pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
-  url: <%= ENV.fetch("DATABASE_URL", "") %>
+  host:     <%= ENV.fetch("PGHOST",     "localhost") %>
+  port:     <%= ENV.fetch("PGPORT",     "5432") %>
+  database: <%= ENV.fetch("PGDATABASE", "crm_development") %>
+  username: <%= ENV.fetch("PGUSER",     "crm") %>
+  password: <%= ENV.fetch("PGPASSWORD", "") %>
 
 development:
   <<: *default
+  database: <%= ENV.fetch("PGDATABASE", "crm_development") %>
 
 test:
   <<: *default
@@ -13,3 +18,4 @@ test:
 
 production:
   <<: *default
+  database: <%= ENV.fetch("PGDATABASE", "crm_production") %>
