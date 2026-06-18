@@ -1,8 +1,8 @@
 module Webhooks
   class CanalProController < ApplicationController
-    skip_before_action :verify_authenticity_token, raise: false
-    skip_before_action :authenticate_user!
-    skip_before_action :check_subscription_access!
+    skip_before_action :verify_authenticity_token,    raise: false
+    skip_before_action :authenticate_user!,            raise: false
+    skip_before_action :check_subscription_access!,   raise: false
 
     def create
       account = Account.find_by(portal_token: params[:token])
