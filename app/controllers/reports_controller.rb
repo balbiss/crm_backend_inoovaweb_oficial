@@ -55,7 +55,7 @@ class ReportsController < ApplicationController
   end
 
   def by_tag
-    tags = account.tags.includes(:conversations)
+    tags = account.tags
 
     data = tags.map do |tag|
       contacts_with_tag = Contact.joins(conversations: :conversation_tags)
