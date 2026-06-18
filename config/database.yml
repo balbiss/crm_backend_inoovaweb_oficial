@@ -4,7 +4,6 @@ default: &default
   pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
   host:     <%= ENV.fetch("PGHOST",     "localhost") %>
   port:     <%= ENV.fetch("PGPORT",     "5432") %>
-  database: <%= ENV.fetch("PGDATABASE", "crm_development") %>
   username: <%= ENV.fetch("PGUSER",     "crm") %>
   password: <%= ENV.fetch("PGPASSWORD", "") %>
 
@@ -17,5 +16,18 @@ test:
   database: crm_backend_test
 
 production:
-  <<: *default
-  database: <%= ENV.fetch("PGDATABASE", "crm_production") %>
+  primary:
+    <<: *default
+    database: <%= ENV.fetch("PGDATABASE", "crm_production") %>
+  cache:
+    <<: *default
+    database: <%= ENV.fetch("PGDATABASE", "crm_production") %>
+    migrations_paths: db/cache_migrate
+  queue:
+    <<: *default
+    database: <%= ENV.fetch("PGDATABASE", "crm_production") %>
+    migrations_paths: db/queue_migrate
+  cable:
+    <<: *default
+    database: <%= ENV.fetch("PGDATABASE", "crm_production") %>
+    migrations_paths: db/cable_migrate
