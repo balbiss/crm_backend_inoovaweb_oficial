@@ -74,8 +74,11 @@ Rails.application.routes.draw do
   end
   
   namespace :webhooks do
-    post 'baileys', to: 'baileys#create'
-    post 'stripe', to: 'stripe#create'
+    post 'baileys',              to: 'baileys#create'
+    post 'stripe',               to: 'stripe#create'
+    post 'canal_pro/:token',     to: 'canal_pro#create'
+    post 'zap/:token',           to: 'canal_pro#create'
+    post 'viva_real/:token',     to: 'canal_pro#create'
   end
 
   namespace :admin do

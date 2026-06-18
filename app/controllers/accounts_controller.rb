@@ -4,12 +4,19 @@ class AccountsController < ApplicationController
 
   def show
     account = current_user.account
+    api_host = ENV['API_HOST'] || 'http://localhost:3000'
     render json: {
-      account_name: account.name,
-      email: current_user.email,
+      account_name:        account.name,
+      email:               current_user.email,
       subscription_status: account.subscription_status || 'pending',
-      trial_ends_at: account.trial_ends_at,
-      plan_name: 'Plano Premium' # No futuro pode vir do Stripe
+      trial_ends_at:       account.trial_ends_at,
+      plan_name:           'Plano Premium',
+      portal_token:        account.portal_token,
+      webhook_urls: {
+        canal_pro: "#{api_host}/webhooks/canal_pro/#{account.portal_token}",
+        zap:       "#{api_host}/webhooks/zap/#{account.portal_token}",
+        viva_real: "#{api_host}/webhooks/viva_real/#{account.portal_token}"
+      }
     }
   end
 
