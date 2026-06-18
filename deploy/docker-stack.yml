@@ -132,7 +132,7 @@ services:
 
   crm_worker:
     image: ghcr.io/balbiss/crm-backend:latest
-    command: bash -c "sleep 40 && bundle exec rails jobs:work"
+    command: bash -c "sleep 40 && bundle exec rails solid_queue:start"
     environment:
       - RAILS_ENV=production
       - PGHOST=crm_db
