@@ -1,0 +1,196 @@
+version: '3.8'
+
+# ================================================================
+# CRM IMOBILIÁRIO — PORTAINER STACK (Docker Swarm)
+# ================================================================
+# Como usar no Portainer:
+# 1. Stacks → Add Stack → Web editor
+# 2. Cola este arquivo
+# 3. Em "Environment variables" adicione todas as variáveis do .env.example
+# 4. Deploy the stack
+# ================================================================
+
+networks:
+  crm_net:
+    driver: overlay
+    attachable: true
+
+volumes:
+  postgres_data:
+  redis_data:
+  baileys_storage:
+  rails_storage:
+
+services:
+
+  # ── Banco de Dados ─────────────────────────────────────────────
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-crm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-crm_production}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - crm_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-crm}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+      placement:
+        constraints:
+          - node.role == manager
+
+  # ── Cache ──────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    command: redis-server --requirepass ${REDIS_PASSWORD:-redis123}
+    volumes:
+      - redis_data:/data
+    networks:
+      - crm_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-redis123}", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+      placement:
+        constraints:
+          - node.role == manager
+
+  # ── WhatsApp API ───────────────────────────────────────────────
+  baileys:
+    image: ghcr.io/fazer-ai/baileys-api:latest
+    environment:
+      NODE_ENV: production
+      PORT: 3025
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis123}@redis:6379/1
+      LOG_LEVEL: warn
+      BAILEYS_LOG_LEVEL: error
+      BAILEYS_PROVIDER_DEFAULT_API_KEY: ${BAILEYS_API_KEY}
+      IGNORE_GROUP_MESSAGES: "true"
+      IGNORE_STATUS_MESSAGES: "true"
+    volumes:
+      - baileys_storage:/app/storage
+    networks:
+      - crm_net
+    command:
+      - sh
+      - "-c"
+      - "bun manage-api-keys create user ${BAILEYS_API_KEY} && bun start"
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 10s
+      placement:
+        constraints:
+          - node.role == manager
+
+  # ── Backend Rails ──────────────────────────────────────────────
+  backend:
+    image: ghcr.io/balbiss/crm-backend:latest
+    environment:
+      RAILS_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-crm_production}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis123}@redis:6379/0
+      RAILS_MASTER_KEY: ${RAILS_MASTER_KEY}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      API_HOST: ${BACKEND_URL}
+      FRONTEND_URL: ${FRONTEND_URL}
+      BAILEYS_API_URL: http://baileys:3025
+      BAILEYS_API_KEY: ${BAILEYS_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      APP_NAME: ${APP_NAME:-CRM Imobiliário}
+      RAILS_LOG_TO_STDOUT: "true"
+      RAILS_SERVE_STATIC_FILES: "true"
+    volumes:
+      - rails_storage:/rails/storage
+    networks:
+      - crm_net
+    ports:
+      - "3000:80"
+    command: >
+      bash -c "bundle exec rails db:prepare && bundle exec rails server -b 0.0.0.0 -p 80"
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 15s
+        max_attempts: 3
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+      placement:
+        constraints:
+          - node.role == manager
+
+  # ── Worker Jobs ────────────────────────────────────────────────
+  worker:
+    image: ghcr.io/balbiss/crm-backend:latest
+    environment:
+      RAILS_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-crm_production}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis123}@redis:6379/0
+      RAILS_MASTER_KEY: ${RAILS_MASTER_KEY}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      BAILEYS_API_URL: http://baileys:3025
+      BAILEYS_API_KEY: ${BAILEYS_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      RAILS_LOG_TO_STDOUT: "true"
+    volumes:
+      - rails_storage:/rails/storage
+    networks:
+      - crm_net
+    command: bundle exec rails jobs:work
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 15s
+      placement:
+        constraints:
+          - node.role == manager
+
+  # ── Frontend Vue ───────────────────────────────────────────────
+  frontend:
+    image: ghcr.io/balbiss/crm-frontend:latest
+    environment:
+      API_URL: ${BACKEND_URL}
+      APP_NAME: ${APP_NAME:-CRM Imobiliário}
+      APP_LOGO_URL: ${APP_LOGO_URL:-}
+      APP_PRIMARY_COLOR: ${APP_PRIMARY_COLOR:-#1f93ff}
+      APP_ACCENT_COLOR: ${APP_ACCENT_COLOR:-#8b5cf6}
+      APP_SUPPORT_EMAIL: ${APP_SUPPORT_EMAIL:-}
+      APP_FOOTER_TEXT: ${APP_FOOTER_TEXT:-© 2025 CRM Imobiliário}
+    networks:
+      - crm_net
+    ports:
+      - "80:80"
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+      placement:
+        constraints:
+          - node.role == manager
