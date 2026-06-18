@@ -155,6 +155,7 @@ module Webhooks
         contact = Contact.find_or_create_by(phone: contact_phone_formatted, account_id: account.id) do |c|
           c.name = msg[:pushName] || msg['pushName'] || contact_phone_formatted
           c.jid = contact_jid
+          c.source = 'WhatsApp'
         end
 
         # Ignora contatos bloqueados
