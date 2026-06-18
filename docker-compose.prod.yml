@@ -1,0 +1,132 @@
+version: '3.8'
+
+services:
+
+  # ─── Banco de Dados ────────────────────────────────────────────
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-crm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-crm_production}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-crm}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── Cache / Filas ─────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ─── API Rails (backend) ───────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      RAILS_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-crm_production}
+      REDIS_URL: redis://redis:6379/0
+      RAILS_MASTER_KEY: ${RAILS_MASTER_KEY}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      API_HOST: ${BACKEND_URL}
+      FRONTEND_URL: ${FRONTEND_URL}
+      BAILEYS_API_URL: http://baileys:3025
+      BAILEYS_API_KEY: ${BAILEYS_API_KEY:-innovaweb2025}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      RAILS_LOG_TO_STDOUT: "true"
+      RAILS_SERVE_STATIC_FILES: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "3000:80"
+    command: >
+      bash -c "
+        bundle exec rails db:prepare &&
+        bundle exec rails server -b 0.0.0.0 -p 80
+      "
+
+  # ─── Jobs em background (Solid Queue / GoodJob) ────────────────
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      RAILS_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-crm_production}
+      REDIS_URL: redis://redis:6379/0
+      RAILS_MASTER_KEY: ${RAILS_MASTER_KEY}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      BAILEYS_API_URL: http://baileys:3025
+      BAILEYS_API_KEY: ${BAILEYS_API_KEY:-innovaweb2025}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: bundle exec rails jobs:work
+
+  # ─── WhatsApp API (Baileys) ────────────────────────────────────
+  baileys:
+    image: ghcr.io/fazer-ai/baileys-api:latest
+    restart: unless-stopped
+    volumes:
+      - baileys_storage:/app/storage
+    environment:
+      NODE_ENV: production
+      PORT: 3025
+      REDIS_URL: redis://redis:6379/1
+      LOG_LEVEL: warn
+      BAILEYS_LOG_LEVEL: error
+      BAILEYS_PROVIDER_DEFAULT_API_KEY: ${BAILEYS_API_KEY:-innovaweb2025}
+      IGNORE_GROUP_MESSAGES: "true"
+      IGNORE_STATUS_MESSAGES: "true"
+    command:
+      - sh
+      - "-c"
+      - "bun manage-api-keys create user ${BAILEYS_API_KEY:-innovaweb2025} && bun start"
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "3025:3025"
+
+  # ─── Frontend Vue (nginx) ──────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${BACKEND_URL}
+        VITE_APP_NAME: ${APP_NAME:-CRM Imobiliário}
+        VITE_APP_LOGO_URL: ${APP_LOGO_URL:-}
+        VITE_APP_PRIMARY_COLOR: ${APP_PRIMARY_COLOR:-#1f93ff}
+        VITE_APP_ACCENT_COLOR: ${APP_ACCENT_COLOR:-#8b5cf6}
+        VITE_APP_SUPPORT_EMAIL: ${APP_SUPPORT_EMAIL:-suporte@crm.com}
+        VITE_APP_FOOTER_TEXT: ${APP_FOOTER_TEXT:-© 2025 CRM Imobiliário}
+    restart: unless-stopped
+    ports:
+      - "5173:80"
+
+volumes:
+  postgres_data:
+  redis_data:
+  baileys_storage:

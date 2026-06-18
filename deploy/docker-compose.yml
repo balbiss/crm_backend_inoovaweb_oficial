@@ -1,0 +1,120 @@
+version: '3.8'
+
+# ================================================================
+# CRM IMOBILIÁRIO — INSTALAÇÃO
+# 1. Copie .env.example para .env e preencha
+# 2. docker compose up -d
+# ================================================================
+
+services:
+
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-crm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-crm_production}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-crm}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  baileys:
+    image: ghcr.io/fazer-ai/baileys-api:latest
+    restart: unless-stopped
+    volumes:
+      - baileys_storage:/app/storage
+    environment:
+      NODE_ENV: production
+      PORT: 3025
+      REDIS_URL: redis://redis:6379/1
+      LOG_LEVEL: warn
+      BAILEYS_LOG_LEVEL: error
+      BAILEYS_PROVIDER_DEFAULT_API_KEY: ${BAILEYS_API_KEY}
+      IGNORE_GROUP_MESSAGES: "true"
+      IGNORE_STATUS_MESSAGES: "true"
+    command:
+      - sh
+      - "-c"
+      - "bun manage-api-keys create user ${BAILEYS_API_KEY} && bun start"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  backend:
+    image: ghcr.io/balbiss/crm-backend:latest
+    restart: unless-stopped
+    environment:
+      RAILS_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-crm_production}
+      REDIS_URL: redis://redis:6379/0
+      RAILS_MASTER_KEY: ${RAILS_MASTER_KEY}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      API_HOST: ${BACKEND_URL}
+      FRONTEND_URL: ${FRONTEND_URL}
+      BAILEYS_API_URL: http://baileys:3025
+      BAILEYS_API_KEY: ${BAILEYS_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      RAILS_LOG_TO_STDOUT: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "3000:80"
+    command: >
+      bash -c "bundle exec rails db:prepare && bundle exec rails server -b 0.0.0.0 -p 80"
+
+  worker:
+    image: ghcr.io/balbiss/crm-backend:latest
+    restart: unless-stopped
+    environment:
+      RAILS_ENV: production
+      DATABASE_URL: postgres://${POSTGRES_USER:-crm}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-crm_production}
+      REDIS_URL: redis://redis:6379/0
+      RAILS_MASTER_KEY: ${RAILS_MASTER_KEY}
+      SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+      BAILEYS_API_URL: http://baileys:3025
+      BAILEYS_API_KEY: ${BAILEYS_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: bundle exec rails jobs:work
+
+  frontend:
+    image: ghcr.io/balbiss/crm-frontend:latest
+    restart: unless-stopped
+    environment:
+      API_URL: ${BACKEND_URL}
+      APP_NAME: ${APP_NAME}
+      APP_LOGO_URL: ${APP_LOGO_URL:-}
+      APP_PRIMARY_COLOR: ${APP_PRIMARY_COLOR:-#1f93ff}
+      APP_ACCENT_COLOR: ${APP_ACCENT_COLOR:-#8b5cf6}
+      APP_SUPPORT_EMAIL: ${APP_SUPPORT_EMAIL}
+      APP_FOOTER_TEXT: ${APP_FOOTER_TEXT}
+    ports:
+      - "80:80"
+
+volumes:
+  postgres_data:
+  redis_data:
+  baileys_storage:
