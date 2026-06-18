@@ -48,6 +48,26 @@ class WhatsappBaileysService
     response.is_a?(Net::HTTPSuccess)
   end
 
+  def resolve_jid(phone)
+    digits = phone.gsub(/\D/, '')
+    digits = "55#{digits}" if digits.length <= 11 && !digits.start_with?('55')
+    jid_to_check = "#{digits}@s.whatsapp.net"
+
+    uri = URI.parse("#{@api_url}/connections/#{@phone_number}/on-whatsapp")
+    request = Net::HTTP::Post.new(uri)
+    request.content_type = 'application/json'
+    request['x-api-key'] = @api_key
+    request.body = JSON.dump({ 'jids' => [jid_to_check] })
+
+    response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https',
+                                open_timeout: 5, read_timeout: 10) { |h| h.request(request) }
+    result = JSON.parse(response.body).first rescue nil
+    result&.dig('exists') ? result['jid'] : nil
+  rescue => e
+    Rails.logger.error("resolve_jid error: #{e.message}")
+    nil
+  end
+
   def send_message(recipient_phone, text, attachment = nil)
     # The recipient_phone must be in format like 5511999999999@s.whatsapp.net
     # If it's just a number, we append the domain
