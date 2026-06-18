@@ -15,10 +15,15 @@ class AppointmentsController < ApplicationController
     }
 
     by_agent = if owner?
-      scoped.joins(:user).group('users.first_name', 'users.last_name', 'users.id')
-            .select('users.id as uid, users.first_name, users.last_name, COUNT(*) as total,
-                     SUM(CASE WHEN appointments.status IN (\'completed\',\'realizado\') THEN 1 ELSE 0 END) as done')
-            .map { |r| { id: r.uid, name: "#{r.first_name} #{r.last_name}".strip, total: r.total.to_i, done: r.done.to_i } }
+      account.users.where(role: %w[atendente admin]).map do |agent|
+        agent_scope = scoped.where(user_id: agent.id)
+        {
+          id:    agent.id,
+          name:  "#{agent.first_name} #{agent.last_name}".strip,
+          total: agent_scope.count,
+          done:  agent_scope.where(status: %w[completed realizado]).count
+        }
+      end
     else
       nil
     end
