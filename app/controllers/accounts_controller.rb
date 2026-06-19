@@ -3,7 +3,7 @@ class AccountsController < ApplicationController
   skip_before_action :check_subscription_access!, only: [:show, :update_password]
 
   def show
-    account = current_user.account
+    account  = current_user.account
     api_host = ENV['API_HOST'] || 'http://localhost:3000'
     render json: {
       account_name:        account.name,
@@ -12,12 +12,26 @@ class AccountsController < ApplicationController
       trial_ends_at:       account.trial_ends_at,
       plan_name:           'Plano Premium',
       portal_token:        account.portal_token,
+      asaas_configured:    account.asaas_api_key.present?,
+      asaas_api_key:       mask_key(account.asaas_api_key),
       webhook_urls: {
         canal_pro: "#{api_host}/webhooks/canal_pro/#{account.portal_token}",
         zap:       "#{api_host}/webhooks/zap/#{account.portal_token}",
         viva_real: "#{api_host}/webhooks/viva_real/#{account.portal_token}"
       }
     }
+  end
+
+  def test_asaas
+    account = current_user.account
+    return render json: { ok: false, message: 'API Key não configurada.' } if account.asaas_api_key.blank?
+
+    result = AsaasService.new(account.asaas_api_key).test_connection
+    if result[:ok]
+      render json: { ok: true, message: "Conectado: #{result[:name]}" }
+    else
+      render json: { ok: false, message: result[:error] || 'Falha na conexão.' }
+    end
   end
 
   def update
@@ -42,7 +56,12 @@ class AccountsController < ApplicationController
   private
 
   def account_params
-    params.require(:account).permit(:name)
+    params.require(:account).permit(:name, :asaas_api_key)
+  end
+
+  def mask_key(key)
+    return nil if key.blank?
+    "#{key[0..7]}#{'*' * (key.length - 12)}#{key[-4..]}"
   end
 
   def password_params

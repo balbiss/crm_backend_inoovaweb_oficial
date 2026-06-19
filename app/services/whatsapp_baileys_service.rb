@@ -207,6 +207,52 @@ class WhatsappBaileysService
     end
   end
 
+  # Sends raw binary data as a document (e.g. boleto PDF from Asaas)
+  def send_raw_document(jid, filename:, mimetype:, data:, caption: nil)
+    jid = "#{jid.delete('+')}@s.whatsapp.net" unless jid.include?('@')
+
+    uri = URI.parse("#{@api_url}/connections/#{@phone_number}/send-message")
+    req = Net::HTTP::Post.new(uri)
+    req.content_type = 'application/json'
+    req['x-api-key'] = @api_key
+
+    content = {
+      'document' => Base64.strict_encode64(data),
+      'mimetype' => mimetype,
+      'fileName' => filename
+    }
+    content['caption'] = caption if caption.present?
+
+    req.body = JSON.dump({ 'jid' => jid, 'messageContent' => content })
+    response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https',
+                               open_timeout: 20, read_timeout: 40) { |h| h.request(req) }
+    response.is_a?(Net::HTTPSuccess)
+  rescue => e
+    Rails.logger.error("Baileys send_raw_document error: #{e.message}")
+    false
+  end
+
+  # Sends raw binary data as an image (e.g. PIX QR code from Asaas)
+  def send_raw_image(jid, data:, caption: nil)
+    jid = "#{jid.delete('+')}@s.whatsapp.net" unless jid.include?('@')
+
+    uri = URI.parse("#{@api_url}/connections/#{@phone_number}/send-message")
+    req = Net::HTTP::Post.new(uri)
+    req.content_type = 'application/json'
+    req['x-api-key'] = @api_key
+
+    content = { 'image' => Base64.strict_encode64(data) }
+    content['caption'] = caption if caption.present?
+
+    req.body = JSON.dump({ 'jid' => jid, 'messageContent' => content })
+    response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https',
+                               open_timeout: 20, read_timeout: 40) { |h| h.request(req) }
+    response.is_a?(Net::HTTPSuccess)
+  rescue => e
+    Rails.logger.error("Baileys send_raw_image error: #{e.message}")
+    false
+  end
+
   def delete_connection
     Rails.cache.delete("inbox:#{@inbox.id}:qr_code")
     Rails.cache.delete("inbox:#{@inbox.id}:status")

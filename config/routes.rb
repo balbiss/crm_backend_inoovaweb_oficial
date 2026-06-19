@@ -62,6 +62,11 @@ Rails.application.routes.draw do
 
   resource :account, only: [:show, :update] do
     put :update_password
+    get :test_asaas
+  end
+
+  resources :contacts, only: [] do
+    resources :charges, only: [:create], shallow: true
   end
 
   resources :inboxes do
