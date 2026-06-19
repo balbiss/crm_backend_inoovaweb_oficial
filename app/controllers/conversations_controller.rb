@@ -5,7 +5,14 @@ class ConversationsController < ApplicationController
     page  = (params[:page] || 1).to_i
     limit = (params[:per_page] || 100).to_i.clamp(1, 500)
 
-    conversations = current_user.account.conversations
+    base = current_user.account.conversations
+
+    # Corretores (atendente) só veem as próprias conversas e as não atribuídas
+    if current_user.atendente?
+      base = base.where(user_id: [current_user.id, nil])
+    end
+
+    conversations = base
       .includes(:user, :tags, messages: { attachment_attachment: :blob }, contact: { notes: :user })
       .order(last_activity_at: :desc)
       .offset((page - 1) * limit).limit(limit)
