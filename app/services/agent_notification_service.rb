@@ -37,15 +37,22 @@ class AgentNotificationService
     temperature = contact.temperature.presence
     source      = contact.source.presence
     crm_url     = ENV.fetch('FRONTEND_URL', 'http://localhost:5173')
-    by_label    = @assigned_by == 'rodizio' ? 'Rodízio automático' : 'Atribuição manual'
+    dept       = @agent.department.presence || 'corretor'
+    by_label   = case @assigned_by
+                 when 'rodizio'    then 'Rodízio automático'
+                 when 'ia'        then 'Encaminhado pela IA'
+                 else                  'Atribuição manual'
+                 end
+
+    title = dept == 'corretor' ? "🔔 *Novo lead atribuído para você!*" : "🔔 *Nova solicitação atribuída para você!*"
 
     lines = []
-    lines << "🔔 *Novo lead atribuído para você!*"
+    lines << title
     lines << ""
     lines << "👤 *Nome:* #{name}"
     lines << "🏠 *Interesse:* #{intention}"    if intention
     lines << "📍 *Origem:* #{source}"          if source
-    lines << "🌡️ *Temperatura:* #{temperature.capitalize}" if temperature
+    lines << "🌡️ *Temperatura:* #{temperature.capitalize}" if temperature && dept == 'corretor'
     lines << "⚙️ _#{by_label}_"
     lines << ""
     lines << "📲 Acesse o CRM para atender:"
