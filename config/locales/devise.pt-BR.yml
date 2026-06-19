@@ -1,0 +1,47 @@
+pt-BR:
+  devise:
+    mailer:
+      reset_password_instructions:
+        subject: "Redefinição de senha — VisitaIA CRM"
+      confirmation_instructions:
+        subject: "Confirmação de conta — VisitaIA CRM"
+      unlock_instructions:
+        subject: "Desbloqueio de conta — VisitaIA CRM"
+      email_changed:
+        subject: "E-mail alterado — VisitaIA CRM"
+      password_change:
+        subject: "Senha alterada — VisitaIA CRM"
+    sessions:
+      signed_in: "Login realizado com sucesso."
+      signed_out: "Sessão encerrada com sucesso."
+      already_signed_out: "Sessão já encerrada."
+    passwords:
+      no_token: "Você só pode acessar esta página via link de redefinição de senha. Se você chegou aqui por um link enviado por e-mail, verifique se a URL está completa."
+      send_instructions: "Você receberá um e-mail com instruções para redefinir sua senha em breve."
+      send_paranoid_instructions: "Se o e-mail informado existir em nosso banco de dados, você receberá um link para redefinir sua senha."
+      updated: "Sua senha foi alterada com sucesso."
+      updated_not_active: "Sua senha foi alterada com sucesso."
+    registrations:
+      signed_up: "Bem-vindo! Sua conta foi criada com sucesso."
+      signed_up_but_unconfirmed: "Verifique seu e-mail para confirmar sua conta."
+      update_needs_confirmation: "Você atualizou sua conta. Verifique o novo e-mail para confirmá-lo."
+      destroyed: "Sua conta foi cancelada. Esperamos vê-lo novamente em breve."
+    confirmations:
+      send_instructions: "Você receberá um e-mail com instruções para confirmar sua conta em breve."
+      send_paranoid_instructions: "Se o e-mail informado existir em nosso banco de dados, você receberá um e-mail de confirmação."
+      confirmed: "Sua conta foi confirmada com sucesso."
+    unlocks:
+      send_instructions: "Você receberá um e-mail com instruções para desbloquear sua conta em breve."
+      send_paranoid_instructions: "Se a conta existir, você receberá um e-mail com instruções para desbloqueá-la."
+      unlocked: "Sua conta foi desbloqueada com sucesso."
+    failure:
+      already_authenticated: "Você já está logado."
+      unauthenticated: "Você precisa fazer login ou se registrar antes de continuar."
+      unconfirmed: "Você precisa confirmar seu e-mail antes de continuar."
+      locked: "Sua conta está bloqueada."
+      last_attempt: "Você tem mais uma tentativa antes de sua conta ser bloqueada."
+      not_found_in_database: "E-mail ou senha inválidos."
+      invalid: "E-mail ou senha inválidos."
+      invalid_token: "Token de autenticação inválido."
+      timeout: "Sua sessão expirou. Por favor, faça login novamente para continuar."
+      inactive: "Sua conta ainda não foi ativada."
