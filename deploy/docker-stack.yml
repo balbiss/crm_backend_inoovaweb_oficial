@@ -94,6 +94,7 @@ services:
       - RAILS_MASTER_KEY=ff3afee935c0606bd002c728d250e500
       - SECRET_KEY_BASE=3309a4a9ddf5cabe32bd550ac6f1731b3c0a2bd4a7d5eae963bedd2240627391e5c19e6c9911131389c8eb9ed9fdbc852808d7f14afb493c340d1fb8b01a0596
       - API_HOST=https://api-crmchat.visitaia.com.br
+      - BACKEND_URL=https://api-crmchat.visitaia.com.br
       - FRONTEND_URL=https://crmchat.visitaia.com.br
       - BAILEYS_API_URL=http://crm_baileys:3025
       - BAILEYS_API_KEY=inoovaweb2025
@@ -101,6 +102,9 @@ services:
       - RAILS_LOG_TO_STDOUT=true
       - RAILS_SERVE_STATIC_FILES=true
       - TZ=America/Sao_Paulo
+      - SMTP_USER=suporte@visitaia.com.br
+      - SMTP_PASSWORD=Guirose@123
+      - SMTP_DOMAIN=visitaia.com.br
     volumes:
       - crm_rails_storage:/rails/storage
     networks:
