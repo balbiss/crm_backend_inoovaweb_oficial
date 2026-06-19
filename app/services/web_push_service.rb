@@ -1,4 +1,4 @@
-class WebPushService
+class WebpushService
   VAPID = {
     subject:     "mailto:#{ENV.fetch('SMTP_USER', 'suporte@visitaia.com.br')}",
     public_key:  ENV.fetch('VAPID_PUBLIC_KEY',  ''),
@@ -9,17 +9,17 @@ class WebPushService
     return if VAPID[:public_key].blank? || VAPID[:private_key].blank?
 
     user.push_subscriptions.each do |sub|
-      WebPush.payload_send(
+      Webpush.payload_send(
         endpoint: sub.endpoint,
         message:  { title: title, body: body, url: url, tag: tag }.to_json,
         p256dh:   sub.p256dh_key,
         auth:     sub.auth_key,
         vapid:    VAPID
       )
-    rescue WebPush::ExpiredSubscription, WebPush::InvalidSubscription
+    rescue Webpush::ExpiredSubscription, Webpush::InvalidSubscription
       sub.destroy
     rescue => e
-      Rails.logger.error("WebPushService: #{e.message}")
+      Rails.logger.error("WebpushService: #{e.message}")
     end
   end
 end

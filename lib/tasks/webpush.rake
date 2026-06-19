@@ -1,7 +1,7 @@
 namespace :webpush do
   desc "Gera as chaves VAPID para push notifications. Adicione ao docker-stack.yml e nunca mude depois."
   task generate_keys: :environment do
-    key = WebPush.generate_key
+    key = Webpush.generate_key
     puts ""
     puts "Adicione estas variáveis ao docker-stack.yml (ambiente do crm_backend):"
     puts ""
