@@ -1,5 +1,5 @@
 class PropertiesController < ApplicationController
-  before_action :set_property, only: %i[ show update destroy ]
+  before_action :set_property, only: %i[ show update destroy trigger_match ]
 
   # GET /properties
   def index
@@ -59,6 +59,12 @@ class PropertiesController < ApplicationController
   # DELETE /properties/1
   def destroy
     @property.destroy!
+  end
+
+  # POST /properties/:id/trigger_match
+  def trigger_match
+    PropertyMatchJob.perform_later(@property.id)
+    render json: { ok: true }
   end
 
   private

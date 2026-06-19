@@ -78,6 +78,33 @@ class ConversationsController < ApplicationController
           conversation_id: conversation.id,
           tags: conversation.tags.map { |t| { id: t.id, name: t.name, color: t.color } }
         })
+
+        # Nota de transferência — mensagem privada visível apenas para a equipe
+        if params[:transfer_note].present? && new_user_id.present?
+          note_msg = Message.create!(
+            account:      current_user.account,
+            conversation: conversation,
+            text:         "Transferido por #{current_user.first_name}: #{params[:transfer_note]}",
+            sender_type:  'User',
+            sender_id:    current_user.id,
+            source_id:    "transfer_#{SecureRandom.hex(8)}",
+            status:       :delivered,
+            is_private:   true
+          )
+          ActionCable.server.broadcast('conversations_channel', {
+            event:           'message_created',
+            conversation_id: conversation.id,
+            message: {
+              id:         note_msg.id,
+              senderType: 'agent',
+              text:       note_msg.text,
+              timestamp:  note_msg.created_at.iso8601,
+              status:     'delivered',
+              agentName:  current_user.first_name,
+              isPrivate:  true
+            }
+          })
+        end
       end
 
       ActionCable.server.broadcast("conversations_channel", {

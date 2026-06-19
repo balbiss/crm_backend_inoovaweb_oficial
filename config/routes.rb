@@ -6,7 +6,11 @@ Rails.application.routes.draw do
     get :export
     get :performance
   end
-  resources :properties
+  resources :properties do
+    member do
+      post :trigger_match
+    end
+  end
   resources :condominiums
   resources :appointments do
     collection do
