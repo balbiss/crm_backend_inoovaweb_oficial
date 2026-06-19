@@ -14,6 +14,7 @@ class AccountsController < ApplicationController
       portal_token:        account.portal_token,
       asaas_configured:    account.asaas_api_key.present?,
       asaas_api_key:       mask_key(account.asaas_api_key),
+      asaas_sandbox:       account.asaas_sandbox?,
       webhook_urls: {
         canal_pro: "#{api_host}/webhooks/canal_pro/#{account.portal_token}",
         zap:       "#{api_host}/webhooks/zap/#{account.portal_token}",
@@ -26,7 +27,7 @@ class AccountsController < ApplicationController
     account = current_user.account
     return render json: { ok: false, message: 'API Key não configurada.' } if account.asaas_api_key.blank?
 
-    result = AsaasService.new(account.asaas_api_key).test_connection
+    result = AsaasService.new(account.asaas_api_key, sandbox: account.asaas_sandbox?).test_connection
     if result[:ok]
       render json: { ok: true, message: "Conectado: #{result[:name]}" }
     else
@@ -56,7 +57,7 @@ class AccountsController < ApplicationController
   private
 
   def account_params
-    params.require(:account).permit(:name, :asaas_api_key)
+    params.require(:account).permit(:name, :asaas_api_key, :asaas_sandbox)
   end
 
   def mask_key(key)

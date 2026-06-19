@@ -35,7 +35,7 @@ class ChargesController < ApplicationController
       return render json: { error: 'Valor deve ser maior que zero.' }, status: :unprocessable_entity
     end
 
-    asaas = AsaasService.new(api_key)
+    asaas = AsaasService.new(api_key, sandbox: account.asaas_sandbox?)
 
     customer_id = asaas.find_or_create_customer(@contact)
     charge      = asaas.create_charge(
@@ -55,7 +55,7 @@ class ChargesController < ApplicationController
     valor_fmt  = "R$ #{sprintf('%.2f', value).gsub('.', ',')}"
     venc_fmt   = Date.parse(due_date).strftime('%d/%m/%Y') rescue due_date
 
-    send_via_whatsapp(asaas, charge_id, billing_type, description, valor_fmt, venc_fmt)
+    send_via_whatsapp(asaas, charge_id, charge['bankSlipUrl'], billing_type, description, valor_fmt, venc_fmt)
 
     render json: {
       charge_id:    charge_id,
@@ -85,7 +85,7 @@ class ChargesController < ApplicationController
     render json: { error: 'forbidden', message: 'Corretores não podem gerar cobranças.' }, status: :forbidden
   end
 
-  def send_via_whatsapp(asaas, charge_id, billing_type, description, valor_fmt, venc_fmt)
+  def send_via_whatsapp(asaas, charge_id, bank_slip_url, billing_type, description, valor_fmt, venc_fmt)
     conversation = @contact.conversations.order(updated_at: :desc).first
     return unless conversation
 
@@ -97,7 +97,7 @@ class ChargesController < ApplicationController
     return unless jid
 
     if billing_type == 'BOLETO'
-      pdf = asaas.download_boleto_pdf(charge_id)
+      pdf = asaas.download_boleto_pdf(bank_slip_url)
       if pdf
         caption = "📄 *Boleto bancário*\n📝 #{description}\n💰 *#{valor_fmt}*\n📅 Vencimento: #{venc_fmt}"
         baileys.send_raw_document(jid,

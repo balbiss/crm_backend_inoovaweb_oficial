@@ -4,10 +4,12 @@ require 'json'
 require 'base64'
 
 class AsaasService
-  BASE_URL = 'https://api.asaas.com/v3'
+  PRODUCTION_URL = 'https://api.asaas.com/v3'
+  SANDBOX_URL    = 'https://api-sandbox.asaas.com/v3'
 
-  def initialize(api_key)
-    @api_key = api_key
+  def initialize(api_key, sandbox: false)
+    @api_key  = api_key
+    @base_url = sandbox ? SANDBOX_URL : PRODUCTION_URL
   end
 
   # Returns asaas customer_id, caching it on the contact to avoid duplicate lookups.
@@ -50,18 +52,20 @@ class AsaasService
     })
   end
 
-  # Returns raw PDF binary or nil
-  def download_boleto_pdf(charge_id)
-    uri     = URI.parse("#{BASE_URL}/payments/#{charge_id}/bankSlip/pdf")
-    request = Net::HTTP::Get.new(uri)
-    request['access_token'] = @api_key
-    request['User-Agent']   = 'CRM-Imobiliario/1.0'
+  # Downloads the boleto PDF from the public bankSlipUrl returned by the payment creation.
+  # url is the full URL, e.g. "https://www.asaas.com/b/pdf/XXXXXXXX"
+  def download_boleto_pdf(url)
+    return nil if url.blank?
 
-    response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true,
+    uri     = URI.parse(url)
+    request = Net::HTTP::Get.new(uri)
+    request['User-Agent'] = 'CRM-Imobiliario/1.0'
+
+    response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https',
                                open_timeout: 15, read_timeout: 30) { |h| h.request(request) }
 
     return response.body if response.is_a?(Net::HTTPSuccess)
-    Rails.logger.error("Asaas boleto PDF #{response.code}: #{response.body}")
+    Rails.logger.error("Asaas boleto PDF #{response.code}: #{url}")
     nil
   rescue => e
     Rails.logger.error("Asaas download_boleto_pdf: #{e.message}")
@@ -78,8 +82,9 @@ class AsaasService
 
   # Returns { ok: true, name: '...' } or { ok: false, error: '...' }
   def test_connection
-    result = get('/myAccount')
-    result['id'].present? ? { ok: true, name: result['name'] } : { ok: false, error: 'Resposta inválida' }
+    result = get('/myAccount/commercialInfo')
+    name = result['companyName'].presence || result['tradingName'].presence || result['name'].presence
+    name.present? ? { ok: true, name: name } : { ok: false, error: 'Resposta inválida' }
   rescue => e
     { ok: false, error: e.message }
   end
@@ -87,7 +92,7 @@ class AsaasService
   private
 
   def get(path)
-    uri = URI.parse("#{BASE_URL}#{path}")
+    uri = URI.parse("#{@base_url}#{path}")
     req = Net::HTTP::Get.new(uri)
     req['access_token']  = @api_key
     req['Content-Type']  = 'application/json'
@@ -102,7 +107,7 @@ class AsaasService
   end
 
   def post(path, body)
-    uri = URI.parse("#{BASE_URL}#{path}")
+    uri = URI.parse("#{@base_url}#{path}")
     req = Net::HTTP::Post.new(uri)
     req['access_token']  = @api_key
     req['Content-Type']  = 'application/json'
