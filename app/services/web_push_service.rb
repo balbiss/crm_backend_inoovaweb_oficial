@@ -1,4 +1,4 @@
-class WebpushService
+class WebPushService
   VAPID = {
     subject:     "mailto:#{ENV.fetch('SMTP_USER', 'suporte@visitaia.com.br')}",
     public_key:  ENV.fetch('VAPID_PUBLIC_KEY',  ''),
@@ -19,7 +19,7 @@ class WebpushService
     rescue Webpush::ExpiredSubscription, Webpush::InvalidSubscription
       sub.destroy
     rescue => e
-      Rails.logger.error("WebpushService: #{e.message}")
+      Rails.logger.error("WebPushService: #{e.message}")
     end
   end
 end
