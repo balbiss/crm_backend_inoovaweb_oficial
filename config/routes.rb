@@ -76,9 +76,9 @@ Rails.application.routes.draw do
   namespace :webhooks do
     post 'baileys',              to: 'baileys#create'
     post 'stripe',               to: 'stripe#create'
-    post 'canal_pro/:token',     to: 'canal_pro#create'
-    post 'zap/:token',           to: 'canal_pro#create'
-    post 'viva_real/:token',     to: 'canal_pro#create'
+    post 'canal_pro/:token',     to: 'canal_pro#create', defaults: { source_portal: 'canal_pro' }
+    post 'zap/:token',           to: 'canal_pro#create', defaults: { source_portal: 'zap' }
+    post 'viva_real/:token',     to: 'canal_pro#create', defaults: { source_portal: 'viva_real' }
   end
 
   namespace :admin do

@@ -1,8 +1,14 @@
 module Webhooks
   class CanalProController < ApplicationController
-    skip_before_action :verify_authenticity_token,    raise: false
-    skip_before_action :authenticate_user!,            raise: false
-    skip_before_action :check_subscription_access!,   raise: false
+    skip_before_action :verify_authenticity_token,  raise: false
+    skip_before_action :authenticate_user!,          raise: false
+    skip_before_action :check_subscription_access!, raise: false
+
+    PORTAL_TAG_COLORS = {
+      'canal_pro' => '#7c3aed',
+      'zap'       => '#FF5A00',
+      'viva_real' => '#0062CC'
+    }.freeze
 
     def create
       account = Account.find_by(portal_token: params[:token])
@@ -10,17 +16,16 @@ module Webhooks
         render json: { error: 'token inválido' }, status: :not_found and return
       end
 
-      lead = extract_lead(params)
+      source_portal = params[:source_portal].presence || 'canal_pro'
+      lead = extract_lead(params, source_portal)
 
       unless lead[:phone].present? || lead[:email].present?
-        Rails.logger.warn("Canal Pro: lead sem telefone nem email — ignorado")
+        Rails.logger.warn("Portal #{source_portal}: lead sem telefone nem email — ignorado")
         render json: { status: 'ignored', reason: 'no_contact_info' } and return
       end
 
-      # Normaliza telefone
       phone = normalize_phone(lead[:phone])
 
-      # Encontra ou cria contato
       contact = if phone.present?
         Contact.find_or_initialize_by(phone: phone, account_id: account.id)
       else
@@ -30,56 +35,63 @@ module Webhooks
       contact.name   = lead[:name].presence || contact.name || phone || lead[:email]
       contact.email  = lead[:email].presence || contact.email
       contact.phone  = phone.presence || contact.phone
-      contact.source = 'canal_pro'
+      contact.source = source_portal
       contact.save!
 
-      # Inbox: usa a configurada em GlobalSetting ou a primeira com AI ativa
-      inbox_id = GlobalSetting.fetch('canal_pro_inbox_id').presence
-      inbox = inbox_id ? account.inboxes.find_by(id: inbox_id) : account.inboxes.where(ai_enabled: true).first
-      inbox ||= account.inboxes.first
+      # Inboxes da conta via membros (inboxes não têm account_id direto)
+      account_inbox_ids = InboxMember.joins(:user)
+                                     .where(users: { account_id: account.id })
+                                     .pluck(:inbox_id).uniq
+
+      setting_key = "#{source_portal}_inbox_id"
+      forced_id   = GlobalSetting.fetch(setting_key).presence || GlobalSetting.fetch('canal_pro_inbox_id').presence
+      inbox = if forced_id
+        Inbox.find_by(id: forced_id)
+      else
+        Inbox.where(id: account_inbox_ids, ai_enabled: true).first ||
+          Inbox.where(id: account_inbox_ids).first
+      end
 
       unless inbox
-        Rails.logger.warn("Canal Pro: conta #{account.id} sem inbox configurada")
+        Rails.logger.warn("Portal #{source_portal}: conta #{account.id} sem inbox configurada")
         render json: { status: 'contact_created', conversation: false } and return
       end
 
-      # Cria conversa (uma por contato/inbox)
       conversation = Conversation.find_or_initialize_by(contact: contact, inbox: inbox)
       is_new = conversation.new_record?
 
       if conversation.new_record?
         conversation.account = account
         conversation.status  = :open
-        conversation.source  = 'canal_pro'
+        conversation.source  = source_portal
         conversation.save!
       elsif conversation.status != 'open'
         conversation.update!(status: :open)
       end
 
-      # Adiciona tag canal_pro
-      tag = account.tags.find_or_create_by!(name: 'canal_pro') { |t| t.color = '#7c3aed' }
+      # Tag com cor da plataforma (canal_pro=roxo, zap=laranja, viva_real=azul)
+      tag_color = PORTAL_TAG_COLORS[source_portal] || '#7c3aed'
+      tag = account.tags.find_or_create_by!(name: source_portal) { |t| t.color = tag_color }
       conversation.tags << tag unless conversation.tags.include?(tag)
 
-      # Mensagem interna com os dados do lead (nota privada)
-      lead_info = build_lead_note(lead)
+      # Nota privada com dados do lead
       Message.create!(
         account:      account,
         conversation: conversation,
-        text:         lead_info,
+        text:         build_lead_note(lead),
         sender_type:  'User',
         sender_id:    nil,
-        source_id:    "canal_pro_#{SecureRandom.hex(8)}",
+        source_id:    "#{source_portal}_#{SecureRandom.hex(8)}",
         status:       :delivered,
         is_private:   true
       )
 
-      # Broadcast para atualizar o painel em tempo real
       ActionCable.server.broadcast('conversations_channel', {
-        event:           'conversation_updated',
-        conversation:    { id: conversation.id, status: 'open', source: 'canal_pro' }
+        event:        'conversation_updated',
+        conversation: { id: conversation.id, status: 'open', source: source_portal }
       })
 
-      # Dispara IA via WhatsApp se tiver telefone e AI ativa
+      # IA via WhatsApp se tiver telefone, AI ativa e conversa nova
       if inbox.ai_enabled && phone.present? && is_new
         jid = "#{phone.gsub(/\D/, '')}@s.whatsapp.net"
         contact.update_column(:jid, jid) if contact.jid.blank?
@@ -106,62 +118,79 @@ module Webhooks
               end
             end
           rescue => e
-            Rails.logger.error("Canal Pro AI error: #{e.message}")
+            Rails.logger.error("Portal #{source_portal} AI error: #{e.message}")
           end
         end
       end
 
       render json: { status: 'ok', conversation_id: conversation.id, contact_id: contact.id }
     rescue => e
-      Rails.logger.error("Canal Pro webhook error: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
+      Rails.logger.error("Portal webhook error: #{e.message}\n#{e.backtrace.first(5).join("\n")}")
       render json: { status: 'error', message: e.message }, status: :internal_server_error
     end
 
     private
 
-    # Parser flexível — suporta diferentes formatos do Canal Pro
-    def extract_lead(p)
+    def extract_lead(p, source_portal = 'canal_pro')
       p = p.to_unsafe_h.with_indifferent_access rescue p
 
-      # Formato aninhado: { lead: { nome:, telefone:, ... }, anuncio: { ... } }
+      # Formato aninhado Canal Pro: { lead: { nome:, telefone:, fones: [...] }, anuncio: { ... } }
       if p[:lead].is_a?(Hash)
         l = p[:lead].with_indifferent_access
         fones = l[:fones].is_a?(Array) ? l[:fones].first&.dig(:numero) : nil
         {
-          name:     l[:nome] || l[:name],
-          email:    l[:email],
-          phone:    l[:telefone] || l[:celular] || l[:fone] || fones,
-          message:  l[:mensagem] || l[:texto] || l[:msg],
-          property: p.dig(:anuncio, :titulo) || p.dig(:anuncio, :ref) || p.dig(:produto, :titulo),
-          source:   p[:portal] || p[:origem] || 'Canal Pro'
+          name:        l[:nome]     || l[:name],
+          email:       l[:email],
+          phone:       l[:telefone] || l[:celular] || l[:fone] || fones,
+          message:     l[:mensagem] || l[:texto]   || l[:msg],
+          property:    p.dig(:anuncio, :titulo) || p.dig(:anuncio, :ref) || p.dig(:produto, :titulo),
+          source:      p[:portal]   || p[:origem]  || source_portal.humanize,
+          temperature: nil
         }
       else
-        # Formato flat: { nome:, email:, telefone:, ... }
+        # Formato flat Grupo ZAP (ZAP Imóveis / Viva Real / OLX Imóveis):
+        # Prioriza phoneNumber (DDD+fone combinados) sobre phone/ddd separados
+        raw_phone = p[:phoneNumber].presence ||
+                    combine_ddd_phone(p[:ddd], p[:phone]) ||
+                    p[:phone] || p[:telefone] || p[:celular] || p[:fone]
+
+        property = p[:produto]  || p[:imovel]   || p[:titulo]          ||
+                   p[:ref]      || p[:clientListingId] || p[:originListingId]
+
         {
-          name:     p[:nome]     || p[:name],
-          email:    p[:email],
-          phone:    p[:telefone] || p[:celular] || p[:fone] || p[:phone],
-          message:  p[:mensagem] || p[:texto]   || p[:msg]  || p[:message],
-          property: p[:produto]  || p[:imovel]  || p[:titulo] || p[:ref],
-          source:   p[:portal]   || p[:origem]  || 'Canal Pro'
+          name:        p[:nome]      || p[:name],
+          email:       p[:email],
+          phone:       raw_phone,
+          message:     p[:mensagem]  || p[:texto]  || p[:msg] || p[:message],
+          property:    property,
+          source:      p[:leadOrigin] || p[:portal] || p[:origem] || source_portal.humanize,
+          temperature: p[:temperature]
         }
       end
+    end
+
+    def combine_ddd_phone(ddd, phone)
+      return nil if ddd.blank? || phone.blank?
+      "#{ddd}#{phone}"
     end
 
     def normalize_phone(raw)
       return nil if raw.blank?
       digits = raw.to_s.gsub(/\D/, '')
       return nil if digits.length < 8
+      # >= 12 dígitos: já tem código de país (ex: 5511975020518)
+      # 10-11 dígitos: número brasileiro sem +55 → adiciona
       digits.length >= 12 ? "+#{digits}" : "+55#{digits}"
     end
 
     def build_lead_note(lead)
-      lines = ["📋 **Lead recebido via #{lead[:source] || 'Canal Pro'}**"]
-      lines << "👤 Nome: #{lead[:name]}"          if lead[:name].present?
-      lines << "📱 Telefone: #{lead[:phone]}"      if lead[:phone].present?
-      lines << "✉️ Email: #{lead[:email]}"         if lead[:email].present?
-      lines << "🏠 Imóvel: #{lead[:property]}"     if lead[:property].present?
-      lines << "💬 Mensagem: #{lead[:message]}"    if lead[:message].present?
+      lines = ["📋 **Lead recebido via #{lead[:source]}**"]
+      lines << "👤 Nome: #{lead[:name]}"               if lead[:name].present?
+      lines << "📱 Telefone: #{lead[:phone]}"           if lead[:phone].present?
+      lines << "✉️ Email: #{lead[:email]}"              if lead[:email].present?
+      lines << "🏠 Imóvel: #{lead[:property]}"          if lead[:property].present?
+      lines << "🌡️ Temperatura: #{lead[:temperature]}"  if lead[:temperature].present?
+      lines << "💬 Mensagem: #{lead[:message]}"         if lead[:message].present?
       lines.join("\n")
     end
   end
