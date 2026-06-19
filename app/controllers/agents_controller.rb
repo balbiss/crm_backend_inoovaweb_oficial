@@ -26,8 +26,10 @@ class AgentsController < ApplicationController
     account = current_user&.account || Account.first
     @agent = account.users.build(agent_params)
     @agent.role = :atendente # Default role
+    plain_password = agent_params[:password]
 
     if @agent.save
+      WelcomeMailer.welcome(@agent, plain_password).deliver_later if @agent.email.present?
       render json: @agent.as_json(except: [:encrypted_password, :jti]), status: :created
     else
       render json: @agent.errors, status: :unprocessable_entity

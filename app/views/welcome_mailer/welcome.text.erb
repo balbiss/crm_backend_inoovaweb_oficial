@@ -1,0 +1,14 @@
+Olá, <%= @user.first_name %>!
+
+Sua conta foi criada com sucesso no <%= @app_name %>.
+
+DADOS DE ACESSO
+---------------
+Departamento : <%= @dept_label %>
+E-mail       : <%= @user.email %>
+Senha        : <%= @plain_password %>
+
+Acesse o sistema em:
+<%= @login_url %>
+
+Por segurança, recomendamos trocar sua senha após o primeiro acesso.
