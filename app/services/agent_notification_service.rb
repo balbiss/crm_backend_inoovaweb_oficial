@@ -10,6 +10,13 @@ class AgentNotificationService
   end
 
   def notify
+    send_whatsapp_notification
+    send_push_notification
+  end
+
+  private
+
+  def send_whatsapp_notification
     return unless @agent.phone.present?
 
     inbox = @conversation.inbox
@@ -23,10 +30,30 @@ class AgentNotificationService
 
     baileys.send_message(jid, build_message)
   rescue => e
-    Rails.logger.error("AgentNotificationService error: #{e.message}")
+    Rails.logger.error("AgentNotificationService whatsapp error: #{e.message}")
   end
 
-  private
+  def send_push_notification
+    contact    = @conversation.contact
+    name       = contact.name.presence ||
+                 "#{contact.first_name} #{contact.last_name}".strip.presence ||
+                 'Novo lead'
+    by_label   = case @assigned_by
+                 when 'rodizio' then 'Rodízio automático'
+                 when 'ia'      then 'Encaminhado pela IA'
+                 else                'Atribuição manual'
+                 end
+
+    WebPushService.notify(
+      @agent,
+      title: 'Novo lead atribuído',
+      body:  "#{name} — #{by_label}",
+      url:   "/conversas",
+      tag:   "lead-#{@conversation.id}"
+    )
+  rescue => e
+    Rails.logger.error("AgentNotificationService push error: #{e.message}")
+  end
 
   def build_message
     contact     = @conversation.contact

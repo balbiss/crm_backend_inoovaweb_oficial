@@ -8,6 +8,7 @@ class User < ApplicationRecord
   has_many :contacts
   has_many :properties
   has_many :appointments
+  has_many :push_subscriptions, dependent: :destroy
   has_many :inbox_members, dependent: :destroy
   has_many :assigned_inboxes, through: :inbox_members, source: :inbox
 

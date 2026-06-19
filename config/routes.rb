@@ -106,6 +106,10 @@ Rails.application.routes.draw do
 
   post 'register', to: 'registrations#create'
 
+  get  'push_subscriptions/vapid_public_key', to: 'push_subscriptions#vapid_public_key'
+  post 'push_subscriptions',                  to: 'push_subscriptions#create'
+  delete 'push_subscriptions/unsubscribe',    to: 'push_subscriptions#unsubscribe'
+
   post 'billing/checkout', to: 'billing#checkout'
   post 'billing/portal', to: 'billing#portal'
 
