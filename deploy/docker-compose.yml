@@ -71,6 +71,10 @@ services:
       BAILEYS_API_KEY: ${BAILEYS_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       RAILS_LOG_TO_STDOUT: "true"
+      BACKEND_URL: ${BACKEND_URL}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_DOMAIN: ${SMTP_DOMAIN:-visitaia.com.br}
     depends_on:
       db:
         condition: service_healthy
