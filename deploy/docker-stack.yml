@@ -105,6 +105,8 @@ services:
       - SMTP_USER=suporte@visitaia.com.br
       - SMTP_PASSWORD=Guirose@123
       - SMTP_DOMAIN=visitaia.com.br
+      - VAPID_PUBLIC_KEY=BK7wRb9HqPpIJPF3R7roeJd1xUOWwJPBkUW9l3at2xR_YUD7ye5PBNIrBNr6qwinEb940ftwMcVWwJLait11C1M
+      - VAPID_PRIVATE_KEY=hSPQpTeq0I9DcX2taeuC3kXPR5pNrSco_k9y80tHxYs
     volumes:
       - crm_rails_storage:/rails/storage
     networks:
