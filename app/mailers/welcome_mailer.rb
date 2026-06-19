@@ -6,6 +6,18 @@ class WelcomeMailer < ApplicationMailer
     'manutencao' => 'Manutenção'
   }.freeze
 
+  def company_welcome(user, account)
+    @user      = user
+    @account   = account
+    @login_url = "#{ENV.fetch('FRONTEND_URL', 'https://crmchat.visitaia.com.br')}/login"
+    @app_name  = ENV.fetch('APP_NAME', 'VisitaIA CRM')
+
+    mail(
+      to:      user.email,
+      subject: "🎉 Sua imobiliária está pronta no #{@app_name}!"
+    )
+  end
+
   def welcome(user, plain_password)
     @user           = user
     @plain_password = plain_password

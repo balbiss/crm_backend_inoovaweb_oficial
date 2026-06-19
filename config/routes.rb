@@ -99,6 +99,8 @@ Rails.application.routes.draw do
     end
   end
 
+  post 'register', to: 'registrations#create'
+
   post 'billing/checkout', to: 'billing#checkout'
   post 'billing/portal', to: 'billing#portal'
 

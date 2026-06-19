@@ -1,0 +1,14 @@
+Olá, <%= @user.first_name %>! 🎉
+
+Sua imobiliária <%= @account.name %> está pronta no <%= @app_name %>.
+
+Acesse agora:
+<%= @login_url %>
+
+Recursos disponíveis:
+- WhatsApp com IA (atendimento automático 24h)
+- Rodízio automático de leads entre corretores
+- Integração com ZAP, Viva Real e OLX
+- Relatórios em tempo real
+
+Dúvidas? Fale com o suporte: <%= ENV.fetch('APP_SUPPORT_EMAIL', 'suporte@visitaia.com.br') %>
