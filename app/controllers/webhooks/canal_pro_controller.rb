@@ -38,18 +38,22 @@ module Webhooks
       contact.source = source_portal
       contact.save!
 
-      # Inboxes da conta via membros (inboxes não têm account_id direto)
-      account_inbox_ids = InboxMember.joins(:user)
+      # Inboxes da conta: busca via conversas (mais confiável, owner nem sempre está em inbox_members)
+      via_conversations = account.conversations.pluck(:inbox_id).uniq.compact
+      via_members       = InboxMember.joins(:user)
                                      .where(users: { account_id: account.id })
                                      .pluck(:inbox_id).uniq
+      account_inbox_ids = (via_conversations + via_members).uniq
 
       setting_key = "#{source_portal}_inbox_id"
       forced_id   = GlobalSetting.fetch(setting_key).presence || GlobalSetting.fetch('canal_pro_inbox_id').presence
       inbox = if forced_id
         Inbox.find_by(id: forced_id)
-      else
+      elsif account_inbox_ids.any?
         Inbox.where(id: account_inbox_ids, ai_enabled: true).first ||
           Inbox.where(id: account_inbox_ids).first
+      else
+        Inbox.where(ai_enabled: true).first || Inbox.first
       end
 
       unless inbox
