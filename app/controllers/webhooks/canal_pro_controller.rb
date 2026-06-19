@@ -90,6 +90,21 @@ module Webhooks
         is_private:   true
       )
 
+      # Mensagem do lead (texto que ele enviou no portal) — dá contexto à IA
+      if is_new
+        lead_text = lead[:message].presence ||
+                    (lead[:property].present? ? "Tenho interesse no imóvel #{lead[:property]}" : "Tenho interesse em um imóvel")
+        Message.create!(
+          account:      account,
+          conversation: conversation,
+          text:         lead_text,
+          sender_type:  'Contact',
+          sender_id:    contact.id,
+          source_id:    "portal_msg_#{SecureRandom.hex(8)}",
+          status:       :delivered
+        )
+      end
+
       ActionCable.server.broadcast('conversations_channel', {
         event:        'conversation_updated',
         conversation: { id: conversation.id, status: 'open', source: source_portal }
