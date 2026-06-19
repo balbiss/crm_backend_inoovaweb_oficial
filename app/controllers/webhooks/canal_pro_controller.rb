@@ -118,7 +118,7 @@ module Webhooks
         Thread.new do
           begin
             sleep 3
-            ai_service = AiAssistantService.new(inbox, conversation)
+            ai_service = AiAssistantService.new(inbox, conversation, extra_context: build_portal_context(lead, source_portal))
             ai_response = ai_service.process_message
             if ai_response.present?
               Rails.cache.write("ai_is_replying_#{inbox.id}_#{jid}", true, expires_in: 60.seconds)
@@ -200,6 +200,15 @@ module Webhooks
       # >= 12 dígitos: já tem código de país (ex: 5511975020518)
       # 10-11 dígitos: número brasileiro sem +55 → adiciona
       digits.length >= 12 ? "+#{digits}" : "+55#{digits}"
+    end
+
+    def build_portal_context(lead, source_portal)
+      portal_names = { 'canal_pro' => 'Canal Pro', 'zap' => 'ZAP Imóveis', 'viva_real' => 'Viva Real' }
+      parts = ["Este lead chegou via #{portal_names[source_portal] || source_portal} (portal imobiliário)."]
+      parts << "Ele tem interesse no imóvel de referência: #{lead[:property]}." if lead[:property].present?
+      parts << "Temperatura indicada pelo portal: #{lead[:temperature]}." if lead[:temperature].present?
+      parts << "INSTRUÇÃO: Esta é a primeira mensagem. Se apresente como assistente da imobiliária pelo nome, mencione o imóvel que ele perguntou e pergunte se deseja mais informações ou quer agendar uma visita."
+      parts.join(" ")
     end
 
     def build_lead_note(lead)

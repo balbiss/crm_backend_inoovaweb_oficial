@@ -1,9 +1,10 @@
 require 'openai'
 
 class AiAssistantService
-  def initialize(inbox, conversation)
+  def initialize(inbox, conversation, extra_context: nil)
     @inbox = inbox
     @conversation = conversation
+    @extra_context = extra_context
     api_key = GlobalSetting.fetch('openai_api_key').presence || ENV['OPENAI_API_KEY']
     @client = OpenAI::Client.new(access_token: api_key)
   end
@@ -119,8 +120,13 @@ class AiAssistantService
 
     prompt = "#{base_prompt}\nSeu nome é #{@inbox.ai_name || 'Assistente'}. Você atende clientes de uma imobiliária. Seja muito humana, empática e natural.\n[CONTEXTO TEMPORAL]: #{date_info} (Sempre use essa data e hora reais como base).\n[DADOS DO CLIENTE]: #{contact_info}#{labels_instruction}"
     
+    # Contexto extra injetado por integrações (portais, webhooks) — sem exigir config manual
+    if @extra_context.present?
+      prompt += "\n\n[CONTEXTO DA INTEGRAÇÃO]: #{@extra_context}"
+    end
+
     status = @conversation.contact.status || 'lead'
-    
+
     case status
     when 'lead'
       prompt += "\n[FASE DE PRÉ-VENDA (SDR)]: Você está atuando como Recepcionista/SDR. O lead acabou de chegar. Seu ÚNICO objetivo é descobrir o que o cliente procura (bairro, valor, quartos) ou a urgência dele. NUNCA tente vender imóveis ou agendar visitas. Apenas acolha, engaje e qualifique. Sempre que entender o que ele procura, use a ferramenta 'qualify_lead' para atualizar a intenção no CRM e avance o lead para 'visit' usando a ferramenta 'move_kanban_card'."
