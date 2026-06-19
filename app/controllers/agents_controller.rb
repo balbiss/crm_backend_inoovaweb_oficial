@@ -100,6 +100,6 @@ class AgentsController < ApplicationController
     end
 
     def agent_params
-      params.require(:agent).permit(:first_name, :last_name, :email, :phone, :password, :status, permissions: {})
+      params.require(:agent).permit(:first_name, :last_name, :email, :phone, :password, :status, :department, permissions: {})
     end
 end

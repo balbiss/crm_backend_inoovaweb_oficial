@@ -117,8 +117,9 @@ class AiAssistantService
     contact_info = "Você está conversando com: #{contact_name}. Número do WhatsApp: #{contact_phone}."
     
     labels_instruction = "\n[ETIQUETAS]: Após concluir a ação principal da mensagem, você pode usar 'apply_label' para classificar o lead se tiver certeza da situação: 'lead_quente' = interesse real e urgência; 'lead_frio' = só pesquisando; 'desqualificado' = fora do perfil; 'com_atendente' = quer falar com humano. Nunca interrompa outra ação para apenas etiquetar."
+    routing_instruction = "\n[ROTEAMENTO DE DEPARTAMENTO]: Se o cliente mencionar assuntos que NÃO são de venda/locação de imóveis — como problemas no imóvel (vazamento, elétrica, infiltração), cobranças, boletos, contratos, segunda via de recibo — use imediatamente a ferramenta 'route_to_department' para encaminhar ao departamento correto: 'suporte' = problemas/manutenção no imóvel; 'financeiro' = cobranças, boletos, segunda via; 'manutencao' = reparos e serviços técnicos. Avise o cliente que está transferindo."
 
-    prompt = "#{base_prompt}\nSeu nome é #{@inbox.ai_name || 'Assistente'}. Você atende clientes de uma imobiliária. Seja muito humana, empática e natural.\n[CONTEXTO TEMPORAL]: #{date_info} (Sempre use essa data e hora reais como base).\n[DADOS DO CLIENTE]: #{contact_info}#{labels_instruction}"
+    prompt = "#{base_prompt}\nSeu nome é #{@inbox.ai_name || 'Assistente'}. Você atende clientes de uma imobiliária. Seja muito humana, empática e natural.\n[CONTEXTO TEMPORAL]: #{date_info} (Sempre use essa data e hora reais como base).\n[DADOS DO CLIENTE]: #{contact_info}#{labels_instruction}#{routing_instruction}"
     
     # Contexto extra injetado por integrações (portais, webhooks) — sem exigir config manual
     if @extra_context.present?
@@ -224,6 +225,22 @@ class AiAssistantService
       }
     }
 
+    route_tool = {
+      type: "function",
+      function: {
+        name: "route_to_department",
+        description: "Encaminha a conversa para um agente do departamento correto (suporte, financeiro, manutencao). Use quando o assunto não é de venda/locação.",
+        parameters: {
+          type: "object",
+          properties: {
+            department: { type: "string", enum: ["suporte", "financeiro", "manutencao"], description: "Departamento de destino" },
+            reason:     { type: "string", description: "Motivo do encaminhamento (ex: 'cliente relata vazamento')" }
+          },
+          required: ["department"]
+        }
+      }
+    }
+
     label_tool = {
       type: "function",
       function: {
@@ -249,13 +266,13 @@ class AiAssistantService
 
     case status
     when 'lead'
-      [qualify_tool, kanban_tool, label_tool]
+      [qualify_tool, kanban_tool, label_tool, route_tool]
     when 'visit', 'atendimento'
-      [search_tool, photos_tool, appointment_tool, kanban_tool, label_tool]
+      [search_tool, photos_tool, appointment_tool, kanban_tool, label_tool, route_tool]
     when 'proposal', 'won'
-      [kanban_tool, label_tool]
+      [kanban_tool, label_tool, route_tool]
     else
-      [qualify_tool, search_tool, photos_tool, appointment_tool, kanban_tool, label_tool]
+      [qualify_tool, search_tool, photos_tool, appointment_tool, kanban_tool, label_tool, route_tool]
     end
   end
 
@@ -453,6 +470,31 @@ class AiAssistantService
       end
 
       "Lead qualificado: temperatura=#{args['temperature']}, intenção=#{args['intention']}."
+
+    when "route_to_department"
+      dept = args['department'].to_s
+      agent = User.where(account_id: account_id, status: 'active', department: dept)
+                  .order(Arel.sql('queue_position ASC NULLS FIRST, id ASC'))
+                  .first
+
+      if agent
+        @conversation.update!(user_id: agent.id)
+        ActionCable.server.broadcast('conversations_channel', {
+          event: 'lead_atribuido',
+          assigned_to_user_id: agent.id,
+          conversation_id: @conversation.id,
+          contact_name: contact.name.presence || contact.phone,
+          assigned_by: 'ia_routing'
+        })
+        AgentNotificationService.notify_assignment(
+          agent: agent, conversation: @conversation, assigned_by: 'ia'
+        ) rescue nil
+        pause_ai_permanently
+        dept_label = { 'suporte' => 'Suporte', 'financeiro' => 'Financeiro', 'manutencao' => 'Manutenção' }[dept] || dept
+        "Conversa encaminhada para #{agent.first_name} (#{dept_label}). IA pausada."
+      else
+        "Nenhum agente disponível no departamento #{dept} no momento."
+      end
 
     when "move_kanban_card"
       contact.update!(status: args['stage'])

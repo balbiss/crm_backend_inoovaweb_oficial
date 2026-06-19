@@ -10,7 +10,7 @@ class RoundRobinAssignmentService
       account = conversation.account.lock!
 
       agent = User
-        .where(account_id: account.id, status: 'active', available_for_roundrobin: true)
+        .where(account_id: account.id, status: 'active', available_for_roundrobin: true, department: 'corretor')
         .order(Arel.sql('queue_position ASC NULLS FIRST, id ASC'))
         .lock
         .first
