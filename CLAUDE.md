@@ -66,5 +66,14 @@ bundle exec rails db:seed          # recriar dados iniciais (CUIDADO em prod)
 ```
 
 ## Repositório
-GitHub: `https://github.com/balbiss/crm_inoovaweb_oficial`
+GitHub: `https://github.com/balbiss/crm_backend_inoovaweb_oficial`
 Branch principal: `main`
+
+## Integração com Frontend
+Este backend serve uma **aplicação Vue 3 separada** em outro repositório:
+- Repositório frontend: `https://github.com/balbiss/crm_inoovaweb_oficial`
+- Pasta local do frontend: `C:\Users\inoov\crm_frontend_check`
+- O frontend consome esta API REST via Axios
+- WebSocket via ActionCable (`/cable`) para chat em tempo real
+- Em produção, ambos sobem como serviços separados no mesmo Docker Swarm no Portainer
+- Para qualquer mudança que envolva nova rota, novo campo ou nova lógica de negócio, é necessário alterar **os dois repositórios**
