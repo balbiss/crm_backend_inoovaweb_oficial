@@ -151,7 +151,7 @@ GEM
       rdoc (>= 4.0.0)
       reline (>= 0.4.2)
     json (2.19.9)
-    jwt (3.2.0)
+    jwt (2.10.3)
       base64
     kamal (2.11.0)
       activesupport (>= 7.0)
@@ -361,9 +361,9 @@ GEM
       dry-configurable (>= 0.13, < 2)
       jwt (>= 2.1, < 4)
       warden (~> 1.2)
-    webpush (0.3.2)
+    webpush (1.1.0)
       hkdf (~> 0.2)
-      jwt
+      jwt (~> 2.0)
     websocket-driver (0.8.1)
       base64
       websocket-extensions (>= 0.1.0)
