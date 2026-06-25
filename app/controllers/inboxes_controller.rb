@@ -7,7 +7,7 @@ class InboxesController < ApplicationController
   before_action :require_owner!, only: %i[ create update destroy qr_code generate_prompt ]
 
   def index
-    @inboxes = Inbox.all
+    @inboxes = current_user.account.inboxes
     render json: @inboxes
   end
 
@@ -16,7 +16,7 @@ class InboxesController < ApplicationController
   end
 
   def create
-    @inbox = Inbox.new(inbox_params)
+    @inbox = current_user.account.inboxes.build(inbox_params)
 
     if @inbox.save
       if @inbox.provider == 'baileys'
@@ -153,7 +153,7 @@ class InboxesController < ApplicationController
 
   private
     def set_inbox
-      @inbox = Inbox.find(params.expect(:id))
+      @inbox = current_user.account.inboxes.find(params.expect(:id))
     end
 
     def inbox_params

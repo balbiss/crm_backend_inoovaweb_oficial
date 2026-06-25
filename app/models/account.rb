@@ -7,6 +7,7 @@ class Account < ApplicationRecord
   has_many :support_tickets, dependent: :destroy
   has_many :notifications, dependent: :destroy
   has_many :tags, dependent: :destroy
+  has_many :inboxes, dependent: :destroy
 
   before_create :set_trial_period
   before_create :generate_portal_token
