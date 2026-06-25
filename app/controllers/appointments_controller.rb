@@ -102,10 +102,8 @@ class AppointmentsController < ApplicationController
   # POST /appointments
   def create
     # Try to use current_user's account, fallback to first account or 1 if not available
-    account = current_user&.account || Account.first || Account.new(id: 1)
-    
     @appointment = Appointment.new(appointment_params)
-    @appointment.account_id ||= account.id
+    @appointment.account_id = current_user.account_id
     @appointment.user_id ||= current_user.id
 
     if @appointment.save
@@ -158,7 +156,7 @@ class AppointmentsController < ApplicationController
     end
 
     def set_appointment
-      @appointment = Appointment.find(params[:id])
+      @appointment = current_user.account.appointments.find(params[:id])
     end
 
     def appointment_params

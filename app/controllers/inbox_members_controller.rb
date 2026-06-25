@@ -29,6 +29,6 @@ class InboxMembersController < ApplicationController
   private
 
   def set_inbox
-    @inbox = Inbox.find(params[:inbox_id])
+    @inbox = current_user.account.inboxes.find(params[:inbox_id])
   end
 end

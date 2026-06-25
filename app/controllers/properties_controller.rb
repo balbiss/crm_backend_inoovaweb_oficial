@@ -3,10 +3,11 @@ class PropertiesController < ApplicationController
 
   # GET /properties
   def index
-    if current_user&.role == 'admin' || current_user&.role == 'empresa' || current_user&.permissions&.dig('view_all_properties')
-      @properties = Property.with_attached_photos.all
+    base = current_user.account.properties.with_attached_photos
+    @properties = if current_user.role == 'admin' || current_user.role == 'empresa' || current_user.permissions&.dig('view_all_properties')
+      base
     else
-      @properties = Property.with_attached_photos.where(user_id: current_user.id)
+      base.where(user_id: current_user.id)
     end
     render json: @properties.as_json(methods: [:photo_urls])
   end

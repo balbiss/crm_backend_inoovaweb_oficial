@@ -59,7 +59,7 @@ class ContactsController < ApplicationController
 
   # POST /contacts/1/merge
   def merge
-    target_contact = Contact.find_by(id: params[:target_contact_id])
+    target_contact = current_user.account.contacts.find_by(id: params[:target_contact_id])
     if target_contact.nil? || target_contact.id == @contact.id
       return render json: { error: 'Invalid target contact' }, status: :unprocessable_entity
     end
