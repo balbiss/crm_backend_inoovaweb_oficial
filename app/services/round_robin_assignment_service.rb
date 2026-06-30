@@ -43,7 +43,7 @@ class RoundRobinAssignmentService
   private
 
   def self.broadcast_assignment(conversation, agent)
-    ActionCable.server.broadcast('conversations_channel', {
+    ActionCable.server.broadcast("conversations_channel_#{conversation.account_id}", {
       event: 'conversation_updated',
       conversation: {
         id: conversation.id,
@@ -52,7 +52,7 @@ class RoundRobinAssignmentService
       }
     })
 
-    ActionCable.server.broadcast('conversations_channel', {
+    ActionCable.server.broadcast("conversations_channel_#{conversation.account_id}", {
       event: 'lead_atribuido',
       assigned_to_user_id: agent.id,
       conversation_id: conversation.id,

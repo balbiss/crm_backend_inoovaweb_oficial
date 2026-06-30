@@ -12,7 +12,7 @@ class Contact < ApplicationRecord
   private
 
   def broadcast_contact_update
-    ActionCable.server.broadcast("conversations_channel", {
+    ActionCable.server.broadcast("conversations_channel_#{account_id}", {
       event: 'contact_updated',
       contact_id: id
     })

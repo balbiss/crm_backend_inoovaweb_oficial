@@ -424,7 +424,7 @@ class AiAssistantService
       tag = @conversation.account.tags.find_or_create_by!(name: label_name) { |t| t.color = color }
       @conversation.tags << tag unless @conversation.tags.include?(tag)
 
-      ActionCable.server.broadcast('conversations_channel', {
+      ActionCable.server.broadcast("conversations_channel_#{@conversation.account_id}", {
         event: 'conversation_tags_updated',
         conversation_id: @conversation.id,
         tags: @conversation.reload.tags.map { |t| { id: t.id, name: t.name, color: t.color } }
@@ -462,7 +462,7 @@ class AiAssistantService
         tag = @conversation.account.tags.find_or_create_by!(name: label_name) { |t| t.color = label_colors[label_name] }
         @conversation.tags << tag
 
-        ActionCable.server.broadcast('conversations_channel', {
+        ActionCable.server.broadcast("conversations_channel_#{@conversation.account_id}", {
           event: 'conversation_tags_updated',
           conversation_id: @conversation.id,
           tags: @conversation.reload.tags.map { |t| { id: t.id, name: t.name, color: t.color } }
@@ -479,7 +479,7 @@ class AiAssistantService
 
       if agent
         @conversation.update!(user_id: agent.id)
-        ActionCable.server.broadcast('conversations_channel', {
+        ActionCable.server.broadcast("conversations_channel_#{@conversation.account_id}", {
           event: 'lead_atribuido',
           assigned_to_user_id: agent.id,
           conversation_id: @conversation.id,
@@ -564,7 +564,7 @@ class AiAssistantService
     tag = @conversation.account.tags.find_or_create_by!(name: 'agente_off') { |t| t.color = '#f97316' }
     @conversation.tags << tag unless @conversation.tags.include?(tag)
 
-    ActionCable.server.broadcast('conversations_channel', {
+    ActionCable.server.broadcast("conversations_channel_#{@conversation.account_id}", {
       event: 'conversation_tags_updated',
       conversation_id: @conversation.id,
       tags: @conversation.reload.tags.map { |t| { id: t.id, name: t.name, color: t.color } }

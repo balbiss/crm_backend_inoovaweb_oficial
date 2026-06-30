@@ -49,7 +49,7 @@ class ConversationsController < ApplicationController
         # Notifica o atendente que recebeu o lead
         if new_user_id.present?
           new_agent = users_hash[new_user_id]
-          ActionCable.server.broadcast('conversations_channel', {
+          ActionCable.server.broadcast("conversations_channel_#{current_user.account_id}", {
             event: 'lead_atribuido',
             assigned_to_user_id: new_user_id,
             conversation_id: conversation.id,
@@ -73,7 +73,7 @@ class ConversationsController < ApplicationController
           conversation.conversation_tags.where(tag_id: tag.id).delete_all
           conversation.tags.reset
         end
-        ActionCable.server.broadcast('conversations_channel', {
+        ActionCable.server.broadcast("conversations_channel_#{current_user.account_id}", {
           event: 'conversation_tags_updated',
           conversation_id: conversation.id,
           tags: conversation.tags.map { |t| { id: t.id, name: t.name, color: t.color } }
@@ -91,7 +91,7 @@ class ConversationsController < ApplicationController
             status:       :delivered,
             is_private:   true
           )
-          ActionCable.server.broadcast('conversations_channel', {
+          ActionCable.server.broadcast("conversations_channel_#{current_user.account_id}", {
             event:           'message_created',
             conversation_id: conversation.id,
             message: {
@@ -107,7 +107,7 @@ class ConversationsController < ApplicationController
         end
       end
 
-      ActionCable.server.broadcast("conversations_channel", {
+      ActionCable.server.broadcast("conversations_channel_#{current_user.account_id}", {
         event: 'conversation_updated',
         conversation: format_conversation(conversation, users_hash)
       })
@@ -139,7 +139,7 @@ class ConversationsController < ApplicationController
     if agente_off
       conversation.conversation_tags.where(tag_id: agente_off.id).delete_all
       remaining_tags = conversation.tags.reject { |t| t.id == agente_off.id }
-      ActionCable.server.broadcast('conversations_channel', {
+      ActionCable.server.broadcast("conversations_channel_#{current_user.account_id}", {
         event: 'conversation_tags_updated',
         conversation_id: conversation.id,
         tags: remaining_tags.map { |t| { id: t.id, name: t.name, color: t.color } }
@@ -342,7 +342,7 @@ class ConversationsController < ApplicationController
           source_id:   baileys_id.presence || "closing_#{SecureRandom.hex(8)}",
           status:      :delivered
         )
-        ActionCable.server.broadcast('conversations_channel', {
+        ActionCable.server.broadcast("conversations_channel_#{current_user.account_id}", {
           event:           'message_created',
           conversation_id: conversation.id,
           message: {
@@ -361,7 +361,7 @@ class ConversationsController < ApplicationController
 
     # Broadcast das tags atualizadas
     updated_tags = conversation.tags.reload.map { |t| { id: t.id, name: t.name, color: t.color } }
-    ActionCable.server.broadcast('conversations_channel', {
+    ActionCable.server.broadcast("conversations_channel_#{current_user.account_id}", {
       event:           'conversation_tags_updated',
       conversation_id: conversation.id,
       tags:            updated_tags

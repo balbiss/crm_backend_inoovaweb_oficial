@@ -53,7 +53,7 @@ module Webhooks
       Rails.logger.info("Baileys webhook connection update for inbox #{inbox.id}: status=#{connection_status}, qr_present=#{(data[:qrDataUrl] || data['qrDataUrl']).present?}")
 
       # Envia via Action Cable em tempo real para o frontend
-      ActionCable.server.broadcast("conversations_channel", {
+      ActionCable.server.broadcast("conversations_channel_#{inbox.account_id}", {
         event: 'inbox_updated',
         inbox_id: inbox.id,
         connection_status: connection_status || Rails.cache.read("inbox:#{inbox.id}:status") || 'close',
@@ -101,7 +101,7 @@ module Webhooks
                 if conv
                   tag = conv.account.tags.find_or_create_by!(name: 'agente_off') { |t| t.color = '#f97316' }
                   conv.tags << tag unless conv.tags.include?(tag)
-                  ActionCable.server.broadcast('conversations_channel', {
+                  ActionCable.server.broadcast("conversations_channel_#{conv.account_id}", {
                     event: 'conversation_tags_updated',
                     conversation_id: conv.id,
                     tags: conv.tags.map { |t| { id: t.id, name: t.name, color: t.color } }
@@ -149,8 +149,8 @@ module Webhooks
 
         next if Message.exists?(source_id: source_id)
 
-        # Encontra ou cria a conta (account) associada
-        account = inbox.conversations.first&.account || Account.first || Account.create!(name: 'Default')
+        # Usa a conta do próprio inbox (evita fallback para Account.first errado)
+        account = inbox.account
 
         # Find or create contact
         contact = Contact.find_or_create_by(phone: contact_phone_formatted, account_id: account.id) do |c|
@@ -289,7 +289,7 @@ module Webhooks
             conversation.update!(status: :open)
             # Pausa a IA 30 min para o corretor ter prioridade no atendimento do retorno
             Rails.cache.write("ai_paused_#{inbox.id}_#{remote_jid}", Time.current.to_i, expires_in: 30.minutes)
-            ActionCable.server.broadcast('conversations_channel', {
+            ActionCable.server.broadcast("conversations_channel_#{conversation.account_id}", {
               event:        'conversation_updated',
               conversation: { id: conversation.id, status: 'open', snoozed_until: nil }
             })
@@ -299,13 +299,13 @@ module Webhooks
             if conversation.status == 'snoozed'
               # Cliente enviou mensagem durante o adiamento — cancelar snooze
               conversation.update!(status: :open, snoozed_until: nil)
-              ActionCable.server.broadcast('conversations_channel', {
+              ActionCable.server.broadcast("conversations_channel_#{conversation.account_id}", {
                 event:           'snooze_expired',
                 conversation_id: conversation.id,
                 contact_name:    contact.name.presence || contact.phone,
                 reason:          'client_message'
               })
-              ActionCable.server.broadcast('conversations_channel', {
+              ActionCable.server.broadcast("conversations_channel_#{conversation.account_id}", {
                 event:        'conversation_updated',
                 conversation: { id: conversation.id, status: 'open', snoozed_until: nil }
               })

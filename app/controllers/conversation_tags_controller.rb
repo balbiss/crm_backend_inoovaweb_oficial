@@ -39,7 +39,7 @@ class ConversationTagsController < ApplicationController
   end
 
   def broadcast_update
-    ActionCable.server.broadcast('conversations_channel', {
+    ActionCable.server.broadcast("conversations_channel_#{@conversation.account_id}", {
       event: 'conversation_tags_updated',
       conversation_id: @conversation.id,
       tags: @conversation.tags.map { |t| { id: t.id, name: t.name, color: t.color } }

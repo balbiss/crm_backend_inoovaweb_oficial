@@ -30,7 +30,7 @@ class Message < ApplicationRecord
       attachmentType: attachment.attached? ? attachment.content_type : nil
     }
 
-    ActionCable.server.broadcast("conversations_channel", {
+    ActionCable.server.broadcast("conversations_channel_#{account_id}", {
       event: 'message_created',
       conversation_id: conversation_id,
       message: message_payload

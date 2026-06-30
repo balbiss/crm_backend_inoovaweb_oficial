@@ -105,7 +105,7 @@ module Webhooks
         )
       end
 
-      ActionCable.server.broadcast('conversations_channel', {
+      ActionCable.server.broadcast("conversations_channel_#{account.id}", {
         event:        'conversation_updated',
         conversation: { id: conversation.id, status: 'open', source: source_portal }
       })

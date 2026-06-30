@@ -42,7 +42,7 @@ class PropertyMatchJob < ApplicationJob
 
     return if matched.empty?
 
-    ActionCable.server.broadcast('conversations_channel', {
+    ActionCable.server.broadcast("conversations_channel_#{account.id}", {
       event: 'property_match_found',
       property_id: property.id,
       property_title: property.title.presence || property.property_type || 'Novo imóvel',
