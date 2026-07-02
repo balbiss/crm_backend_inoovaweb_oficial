@@ -25,10 +25,7 @@ class AgentNotificationService
     baileys = WhatsappBaileysService.new(inbox)
     return unless baileys.connected?
 
-    jid = baileys.resolve_jid(@agent.phone)
-    return Rails.logger.warn("AgentNotificationService: #{@agent.phone} não encontrado no WhatsApp") unless jid
-
-    baileys.send_message(jid, build_message)
+    baileys.send_message(@agent.phone, build_message)
   rescue => e
     Rails.logger.error("AgentNotificationService whatsapp error: #{e.message}")
   end

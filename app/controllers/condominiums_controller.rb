@@ -14,7 +14,7 @@ class CondominiumsController < ApplicationController
 
   # POST /condominiums
   def create
-    @condominium = Condominium.new(condominium_params)
+    @condominium = current_user.account.condominiums.new(condominium_params)
 
     if @condominium.save
       if params[:photos]
@@ -61,12 +61,12 @@ class CondominiumsController < ApplicationController
 
     def condominium_params
       params.require(:condominium).permit(
-        :name, :status, :building_type, :sub_type, :construction_progress, 
-        :developer, :builder, :neighborhood, :city, :state, :address, :delivery_date, 
-        :account_id, :land_area, :built_area, :on_site_sales, :construction_year, 
-        :administrator, :architecture, :min_price, :max_price, :tags, :condominium_types, 
-        :cep, :street, :number, :country, :reference_point, :latitude, :longitude, 
-        :government_plan, :security_features, :services, :social_features, 
+        :name, :status, :building_type, :sub_type, :construction_progress,
+        :developer, :builder, :neighborhood, :city, :state, :address, :delivery_date,
+        :land_area, :built_area, :on_site_sales, :construction_year,
+        :administrator, :architecture, :min_price, :max_price, :tags, :condominium_types,
+        :cep, :street, :number, :country, :reference_point, :latitude, :longitude,
+        :government_plan, :security_features, :services, :social_features,
         :commercial_features, :infrastructure, :allotment_infrastructure, :leisure_features
       )
     end
