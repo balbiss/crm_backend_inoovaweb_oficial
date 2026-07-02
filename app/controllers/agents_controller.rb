@@ -92,7 +92,11 @@ class AgentsController < ApplicationController
 
   # DELETE /agents/1
   def destroy
-    @agent.destroy
+    if @agent.destroy
+      head :no_content
+    else
+      render json: { error: @agent.errors.full_messages.join(', ') }, status: :unprocessable_entity
+    end
   end
 
   private

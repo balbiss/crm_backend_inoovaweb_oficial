@@ -4,10 +4,12 @@ class User < ApplicationRecord
   belongs_to :account, optional: true
 
   has_many :support_tickets
-  has_many :support_ticket_messages
-  has_many :contacts
-  has_many :properties
-  has_many :appointments
+  has_many :support_ticket_messages, dependent: :destroy
+  has_many :notes, dependent: :destroy
+  has_many :contacts, dependent: :nullify
+  has_many :conversations, dependent: :nullify
+  has_many :properties, dependent: :nullify
+  has_many :appointments, dependent: :nullify
   has_many :push_subscriptions, dependent: :destroy
   has_many :inbox_members, dependent: :destroy
   has_many :assigned_inboxes, through: :inbox_members, source: :inbox
