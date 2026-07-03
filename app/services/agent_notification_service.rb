@@ -22,10 +22,7 @@ class AgentNotificationService
     inbox = @conversation.inbox
     return unless inbox.present?
 
-    baileys = WhatsappBaileysService.new(inbox)
-    return unless baileys.connected?
-
-    baileys.send_message(@agent.phone, build_message)
+    WhatsappBaileysService.new(inbox).send_message(@agent.phone, build_message)
   rescue => e
     Rails.logger.error("AgentNotificationService whatsapp error: #{e.message}")
   end
