@@ -4,7 +4,7 @@ class Condominium < ApplicationRecord
 
   def photo_urls
     return [] unless photos.attached?
-    photos.map { |p| Rails.application.routes.url_helpers.rails_blob_url(p, host: 'http://localhost:3000') }
+    photos.map { |p| Rails.application.routes.url_helpers.rails_blob_url(p, host: ENV['API_HOST'] || 'http://localhost:3000') }
   end
 
   def photo_data
@@ -12,7 +12,7 @@ class Condominium < ApplicationRecord
     photos.map do |p|
       {
         id: p.id,
-        url: Rails.application.routes.url_helpers.rails_blob_url(p, host: 'http://localhost:3000')
+        url: Rails.application.routes.url_helpers.rails_blob_url(p, host: ENV['API_HOST'] || 'http://localhost:3000')
       }
     end
   end

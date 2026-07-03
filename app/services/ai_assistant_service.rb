@@ -359,11 +359,13 @@ class AiAssistantService
         if condo_results.any?
           response_texts << "Condomínios/Lançamentos:"
           response_texts += condo_results.map do |c|
+            has_photos = c.photos.attached?
             desc = "- ID #{c.id}: #{c.name} em #{c.neighborhood}, #{c.city}. "
             desc += "Status: #{c.status || 'Disponível'}. "
             desc += "Preço: R$ #{c.min_price || 0} a R$ #{c.max_price || 0}. "
             desc += "Lazer: #{c.leisure_features&.truncate(150) || 'Não informado'}. "
             desc += "Estágio de Obra: #{c.construction_progress || 'Não informado'}. "
+            desc += has_photos ? "[TEM_FOTOS: SIM — você pode oferecer enviar fotos usando send_property_photos]" : "[TEM_FOTOS: NÃO — NÃO ofereça enviar fotos deste condomínio]"
             desc
           end
         end
@@ -501,7 +503,8 @@ class AiAssistantService
       "O status do cliente foi atualizado para #{args['stage']} no CRM."
       
     when "send_property_photos"
-      property = Property.find_by(id: args['property_id'], account_id: account_id)
+      property = Property.find_by(id: args['property_id'], account_id: account_id) ||
+                 Condominium.find_by(id: args['property_id'], account_id: account_id)
       if property
         if property.photos.attached?
           # Envia as fotos em background para não travar a resposta principal da IA
@@ -511,7 +514,8 @@ class AiAssistantService
               remote_jid = @conversation.contact.jid || @conversation.contact.phone
               
               property.photos.first(5).each_with_index do |photo, index|
-                caption = index == 0 ? "Aqui estão as fotos do imóvel: #{property.title || property.property_type}" : ""
+                label = property.try(:title) || property.try(:name) || property.try(:property_type) || 'imóvel'
+                caption = index == 0 ? "Aqui estão as fotos: #{label}" : ""
                 
                 # Envia via API do Baileys
                 baileys_service.send_message(remote_jid, caption, photo)
