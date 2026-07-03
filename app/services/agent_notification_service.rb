@@ -22,7 +22,11 @@ class AgentNotificationService
     inbox = @conversation.inbox
     return unless inbox.present?
 
-    WhatsappBaileysService.new(inbox).send_message(@agent.phone, build_message)
+    baileys = WhatsappBaileysService.new(inbox)
+    # resolve_jid testa com e sem o nono dígito brasileiro
+    # se a API falhar, cai no fallback e usa o número direto
+    jid = baileys.resolve_jid(@agent.phone) || @agent.phone
+    baileys.send_message(jid, build_message)
   rescue => e
     Rails.logger.error("AgentNotificationService whatsapp error: #{e.message}")
   end

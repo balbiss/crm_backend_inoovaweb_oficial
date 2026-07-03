@@ -50,19 +50,30 @@ class WhatsappBaileysService
 
   def resolve_jid(phone)
     digits = phone.gsub(/\D/, '')
-    digits = "55#{digits}" if digits.length <= 11 && !digits.start_with?('55')
-    jid_to_check = "#{digits}@s.whatsapp.net"
+    digits = "55#{digits}" unless digits.start_with?('55')
+
+    # Testa os dois formatos brasileiros simultaneamente (problema do nono dígito)
+    # Ex: 5511912345678 (com 9) e 551112345678 (sem 9)
+    candidates = [digits]
+    if digits.start_with?('55') && digits.length == 13
+      candidates << digits[0..3] + digits[5..]   # remove o 9: 5511912345678 → 551112345678
+    elsif digits.start_with?('55') && digits.length == 12
+      candidates << digits[0..3] + '9' + digits[4..]  # adiciona o 9: 551112345678 → 5511912345678
+    end
+
+    jids = candidates.map { |d| "#{d}@s.whatsapp.net" }
 
     uri = URI.parse("#{@api_url}/connections/#{@phone_number}/on-whatsapp")
     request = Net::HTTP::Post.new(uri)
     request.content_type = 'application/json'
     request['x-api-key'] = @api_key
-    request.body = JSON.dump({ 'jids' => [jid_to_check] })
+    request.body = JSON.dump({ 'jids' => jids })
 
     response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https',
                                 open_timeout: 5, read_timeout: 10) { |h| h.request(request) }
-    result = JSON.parse(response.body).first rescue nil
-    result&.dig('exists') ? result['jid'] : nil
+    results = JSON.parse(response.body) rescue []
+    found = results.find { |r| r.is_a?(Hash) && r['exists'] }
+    found&.dig('jid')
   rescue => e
     Rails.logger.error("resolve_jid error: #{e.message}")
     nil
