@@ -515,9 +515,14 @@ class AiAssistantService
         property = Property.where(account_id: account_id).where("title ILIKE :q OR condo_name ILIKE :q", q: "%#{args['name']}%").first ||
                    Condominium.where(account_id: account_id).where("name ILIKE ?", "%#{args['name']}%").first
       end
-      if property.nil? && args['property_id'].blank? && args['name'].blank?
+      if property.nil?
+        # Fallback: nome pode não bater por variação de grafia (ex: "Cavalcanti" vs "Cavalcante").
+        # Se a conta só vende um empreendimento ativo, não há ambiguidade em assumir esse.
+        active_properties = Property.where(account_id: account_id, status: 'Disponível')
         active_condos = Condominium.where(account_id: account_id).where.not(status: 'Esgotado')
-        property = active_condos.first if active_condos.count == 1
+        if active_properties.count.zero? && active_condos.count == 1
+          property = active_condos.first
+        end
       end
       if property
         if property.photos.attached?
