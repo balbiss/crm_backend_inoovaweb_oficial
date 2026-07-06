@@ -132,7 +132,7 @@ class AiAssistantService
     when 'lead'
       prompt += "\n[FASE DE PRÉ-VENDA (SDR)]: Você está atuando como Recepcionista/SDR. O lead acabou de chegar. Seu ÚNICO objetivo é descobrir o que o cliente procura (bairro, valor, quartos) ou a urgência dele. NUNCA tente vender imóveis ou agendar visitas. Apenas acolha, engaje e qualifique. Sempre que entender o que ele procura, use a ferramenta 'qualify_lead' para atualizar a intenção no CRM e avance o lead para 'visit' usando a ferramenta 'move_kanban_card'."
     when 'visit', 'atendimento'
-      prompt += "\n[FASE DE ATENDIMENTO/VENDAS]: Você está atuando como Corretora Digital. O lead já foi qualificado. Seu foco agora é usar a busca de imóveis ('search_properties'), apresentar opções de forma encantadora e agendar visitas ('create_appointment').\n[REGRAS DE APRESENTAÇÃO DE IMÓVEIS]: Quando apresentar um imóvel, NUNCA use formato de lista robótica. Descreva o imóvel de forma fluida, conversacional e vendedora no meio do texto, como um bom corretor faria."
+      prompt += "\n[FASE DE ATENDIMENTO/VENDAS]: Você está atuando como Corretora Digital. O lead já foi qualificado. Seu foco agora é usar a busca de imóveis ('search_properties'), apresentar opções de forma encantadora e agendar visitas ('create_appointment').\n[REGRAS DE APRESENTAÇÃO DE IMÓVEIS]: Quando apresentar um imóvel, NUNCA use formato de lista robótica. Descreva o imóvel de forma fluida, conversacional e vendedora no meio do texto, como um bom corretor faria.\n[FOTOS]: Se o cliente pedir fotos, SEMPRE chame 'send_property_photos' primeiro (informe 'name' com o nome do imóvel/condomínio mencionado na conversa, mesmo sem saber o ID). Só diga que não há fotos se a ferramenta retornar essa informação — nunca negue de antemão."
     when 'proposal', 'won'
       prompt += "\n[FASE DE FECHAMENTO]: Você está atuando no pós-visita/negociação. Foque em tirar dúvidas documentais e financeiras. Não oferte novos imóveis para não desfocar a venda."
     else
@@ -200,13 +200,13 @@ class AiAssistantService
       type: "function",
       function: {
         name: "send_property_photos",
-        description: "Envia as fotos de um imóvel específico para o cliente no WhatsApp.",
+        description: "Envia as fotos de um imóvel ou condomínio para o cliente no WhatsApp. Se você não souber o ID, informe 'name' com o nome do imóvel/condomínio (ex: nome mencionado na conversa) que a busca é feita automaticamente. NUNCA diga que não tem fotos sem antes tentar esta ferramenta.",
         parameters: {
           type: "object",
           properties: {
-            property_id: { type: "integer", description: "ID do imóvel avulso (Property)" }
-          },
-          required: ["property_id"]
+            property_id: { type: "integer", description: "ID do imóvel ou condomínio, se já conhecido (retornado por search_properties)." },
+            name: { type: "string", description: "Nome do imóvel ou condomínio, usado quando o ID não é conhecido." }
+          }
         }
       }
     }
@@ -506,8 +506,19 @@ class AiAssistantService
       "O status do cliente foi atualizado para #{args['stage']} no CRM."
       
     when "send_property_photos"
-      property = Property.find_by(id: args['property_id'], account_id: account_id) ||
-                 Condominium.find_by(id: args['property_id'], account_id: account_id)
+      property = nil
+      if args['property_id'].present?
+        property = Property.find_by(id: args['property_id'], account_id: account_id) ||
+                   Condominium.find_by(id: args['property_id'], account_id: account_id)
+      end
+      if property.nil? && args['name'].present?
+        property = Property.where(account_id: account_id).where("title ILIKE :q OR condo_name ILIKE :q", q: "%#{args['name']}%").first ||
+                   Condominium.where(account_id: account_id).where("name ILIKE ?", "%#{args['name']}%").first
+      end
+      if property.nil? && args['property_id'].blank? && args['name'].blank?
+        active_condos = Condominium.where(account_id: account_id).where.not(status: 'Esgotado')
+        property = active_condos.first if active_condos.count == 1
+      end
       if property
         if property.photos.attached?
           # Envia as fotos em background para não travar a resposta principal da IA
