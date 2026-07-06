@@ -132,7 +132,7 @@ class AiAssistantService
     when 'lead'
       prompt += "\n[FASE DE PRÉ-VENDA (SDR)]: Você está atuando como Recepcionista/SDR. O lead acabou de chegar. Seu ÚNICO objetivo é descobrir o que o cliente procura (bairro, valor, quartos) ou a urgência dele. NUNCA tente vender imóveis ou agendar visitas. Apenas acolha, engaje e qualifique. Sempre que entender o que ele procura, use a ferramenta 'qualify_lead' para atualizar a intenção no CRM e avance o lead para 'visit' usando a ferramenta 'move_kanban_card'."
     when 'visit', 'atendimento'
-      prompt += "\n[FASE DE ATENDIMENTO/VENDAS]: Você está atuando como Corretora Digital. O lead já foi qualificado. Seu foco agora é usar a busca de imóveis ('search_properties'), apresentar opções de forma encantadora e agendar visitas ('create_appointment').\n[REGRAS DE APRESENTAÇÃO DE IMÓVEIS]: Quando apresentar um imóvel, NUNCA use formato de lista robótica. Descreva o imóvel de forma fluida, conversacional e vendedora no meio do texto, como um bom corretor faria.\n[FOTOS]: Se o cliente pedir fotos, SEMPRE chame 'send_property_photos' primeiro (informe 'name' com o nome do imóvel/condomínio mencionado na conversa, mesmo sem saber o ID). Só diga que não há fotos se a ferramenta retornar essa informação — nunca negue de antemão."
+      prompt += "\n[FASE DE ATENDIMENTO/VENDAS]: Você está atuando como Corretora Digital. O lead já foi qualificado. Seu foco agora é usar a busca de imóveis ('search_properties'), apresentar opções de forma encantadora e agendar visitas ('create_appointment').\n[REGRAS DE APRESENTAÇÃO DE IMÓVEIS E CONDOMÍNIOS]: Quando apresentar um imóvel OU condomínio/lançamento, NUNCA despeje os dados crus em formato de lista robótica (ex: não copie 'Segurança: X, Y, Z. Lazer: A, B, C.' literalmente). Leia todas as informações retornadas (localização, diferenciais, segurança, lazer, social, serviços, infraestrutura, construtora, prazo de entrega etc.) e escolha os pontos mais relevantes para o que o cliente busca, contando de forma fluida, conversacional e vendedora, como um bom corretor faria — nunca cite todos os itens, apenas os destaques que fariam o cliente se interessar.\n[FOTOS]: Se o cliente pedir fotos, SEMPRE chame 'send_property_photos' primeiro (informe 'name' com o nome do imóvel/condomínio mencionado na conversa, mesmo sem saber o ID). Só diga que não há fotos se a ferramenta retornar essa informação — nunca negue de antemão."
     when 'proposal', 'won'
       prompt += "\n[FASE DE FECHAMENTO]: Você está atuando no pós-visita/negociação. Foque em tirar dúvidas documentais e financeiras. Não oferte novos imóveis para não desfocar a venda."
     else
@@ -363,11 +363,23 @@ class AiAssistantService
           response_texts << "Condomínios/Lançamentos:"
           response_texts += condo_results.map do |c|
             has_photos = c.photos.attached?
-            desc = "- ID #{c.id}: #{c.name} em #{c.neighborhood}, #{c.city}. "
-            desc += "Status: #{c.status || 'Disponível'}. "
+            desc = "- ID #{c.id}: #{c.name}, em #{c.neighborhood}, #{c.city}/#{c.state}. "
+            desc += "Endereço: #{c.street}, #{c.number}. " if c.street.present?
+            desc += "Status comercial: #{c.status || 'Disponível'}. "
+            desc += "Progresso da obra: #{c.construction_progress}. " if c.construction_progress.present?
+            desc += "Entrega prevista: #{c.delivery_date.strftime('%m/%Y')}. " if c.delivery_date.present?
             desc += "Preço: R$ #{c.min_price || 0} a R$ #{c.max_price || 0}. "
-            desc += "Lazer: #{c.leisure_features&.truncate(150) || 'Não informado'}. "
-            desc += "Estágio de Obra: #{c.construction_progress || 'Não informado'}. "
+            desc += "Construtora: #{c.builder}. " if c.builder.present?
+            desc += "Incorporadora: #{c.developer}. " if c.developer.present?
+            desc += "Tipo: #{c.condominium_types}. " if c.condominium_types.present?
+            desc += "Área do terreno: #{c.land_area}m². " if c.land_area.present?
+            desc += "Área construída: #{c.built_area}m². " if c.built_area.present?
+            desc += "Diferenciais: #{c.tags}. " if c.tags.present?
+            desc += "Segurança: #{c.security_features.truncate(200)}. " if c.security_features.present?
+            desc += "Lazer: #{c.leisure_features.truncate(300)}. " if c.leisure_features.present?
+            desc += "Social: #{c.social_features.truncate(200)}. " if c.social_features.present?
+            desc += "Serviços: #{c.services.truncate(200)}. " if c.services.present?
+            desc += "Infraestrutura: #{c.infrastructure.truncate(200)}. " if c.infrastructure.present?
             desc += has_photos ? "[TEM_FOTOS: SIM — você pode oferecer enviar fotos usando send_property_photos]" : "[TEM_FOTOS: NÃO — NÃO ofereça enviar fotos deste condomínio]"
             desc
           end
