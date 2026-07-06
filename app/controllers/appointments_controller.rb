@@ -3,7 +3,7 @@ class AppointmentsController < ApplicationController
 
   # GET /appointments/report
   def report
-    scope  = base_scope.includes(:contact, :property, :user)
+    scope  = base_scope.includes(:contact, :property, :condominium, :user)
     period = parse_period(params[:period])
     scoped = scope.where(appointment_date: period)
 
@@ -36,7 +36,7 @@ class AppointmentsController < ApplicationController
         start_time:       a.start_time,
         end_time:         a.end_time,
         contact:          { name: a.contact&.name, phone: a.contact&.phone },
-        property:         { title: a.property&.title },
+        property:         { title: a.property&.title || a.condominium&.name },
         agent:            a.user ? "#{a.user.first_name} #{a.user.last_name}".strip : nil
       }
     end
@@ -53,7 +53,7 @@ class AppointmentsController < ApplicationController
 
   # GET /appointments/export
   def export
-    scope  = base_scope.includes(:contact, :property, :user)
+    scope  = base_scope.includes(:contact, :property, :condominium, :user)
     period = parse_period(params[:period])
     rows   = scope.where(appointment_date: period).order(appointment_date: :asc)
 
@@ -63,7 +63,7 @@ class AppointmentsController < ApplicationController
         a.appointment_date&.strftime('%d/%m/%Y'),
         a.start_time, a.end_time,
         a.contact&.name, a.contact&.phone,
-        a.property&.title,
+        a.property&.title || a.condominium&.name,
         a.user ? "#{a.user.first_name} #{a.user.last_name}".strip : 'N/A',
         a.status
       ]
@@ -79,7 +79,7 @@ class AppointmentsController < ApplicationController
   # GET /appointments
   def index
     account_id = current_user.account_id
-    scope = Appointment.includes(:contact, :property).where(account_id: account_id)
+    scope = Appointment.includes(:contact, :property, :condominium).where(account_id: account_id)
 
     unless owner? || current_user.has_permission?('view_all_appointments')
       scope = scope.where(user_id: [current_user.id, nil])
@@ -87,7 +87,8 @@ class AppointmentsController < ApplicationController
 
     render json: scope.as_json(include: {
       contact: { only: [:name, :phone] },
-      property: { only: [:title, :id] }
+      property: { only: [:title, :id] },
+      condominium: { only: [:name, :id] }
     })
   end
 
@@ -95,7 +96,8 @@ class AppointmentsController < ApplicationController
   def show
     render json: @appointment.as_json(include: {
       contact: { only: [:name, :phone] },
-      property: { only: [:title, :id] }
+      property: { only: [:title, :id] },
+      condominium: { only: [:name, :id] }
     })
   end
 
@@ -160,6 +162,6 @@ class AppointmentsController < ApplicationController
     end
 
     def appointment_params
-      params.require(:appointment).permit(:account_id, :contact_id, :property_id, :broker_name, :status, :appointment_date, :start_time, :end_time)
+      params.require(:appointment).permit(:account_id, :contact_id, :property_id, :condominium_id, :broker_name, :status, :appointment_date, :start_time, :end_time)
     end
 end

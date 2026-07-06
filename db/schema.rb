@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_06_17_000504) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -56,15 +56,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_17_000504) do
     t.bigint "account_id", null: false
     t.date "appointment_date"
     t.string "broker_name"
+    t.bigint "condominium_id"
     t.bigint "contact_id", null: false
     t.datetime "created_at", null: false
     t.string "end_time"
-    t.bigint "property_id", null: false
+    t.bigint "property_id"
     t.string "start_time"
     t.string "status"
     t.datetime "updated_at", null: false
     t.bigint "user_id"
     t.index ["account_id"], name: "index_appointments_on_account_id"
+    t.index ["condominium_id"], name: "index_appointments_on_condominium_id"
     t.index ["contact_id"], name: "index_appointments_on_contact_id"
     t.index ["property_id"], name: "index_appointments_on_property_id"
     t.index ["user_id"], name: "index_appointments_on_user_id"
@@ -370,6 +372,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_06_17_000504) do
   add_foreign_key "appointments", "users"
   add_foreign_key "condominia", "accounts"
   add_foreign_key "contacts", "accounts"
+  add_foreign_key "appointments", "condominia", column: "condominium_id"
   add_foreign_key "contacts", "users"
   add_foreign_key "conversations", "accounts"
   add_foreign_key "conversations", "contacts"

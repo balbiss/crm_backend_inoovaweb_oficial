@@ -183,11 +183,11 @@ class AiAssistantService
       type: "function",
       function: {
         name: "create_appointment",
-        description: "Agenda uma visita para o lead em um imóvel avulso (Property). Use o ID numérico retornado por search_properties. Não use IDs de condomínios.",
+        description: "Agenda uma visita para o lead em um imóvel avulso OU condomínio/lançamento. Use o ID numérico retornado por search_properties (funciona para os dois tipos).",
         parameters: {
           type: "object",
           properties: {
-            property_id: { type: "integer", description: "ID numérico do imóvel avulso (retornado por search_properties como 'ID X:')" },
+            property_id: { type: "integer", description: "ID numérico do imóvel ou condomínio (retornado por search_properties como 'ID X:')" },
             date: { type: "string", description: "Data desejada no formato YYYY-MM-DD (ex: 2026-06-19)" },
             time: { type: "string", description: "Hora desejada no formato HH:MM (ex: 10:00). Sempre informe o horário combinado com o cliente." }
           },
@@ -396,13 +396,15 @@ class AiAssistantService
         '11:00'
       end
 
-      property_id = args['property_id']
-      property = Property.find_by(id: property_id, account_id: account_id)
+      listing_id = args['property_id']
+      property = Property.find_by(id: listing_id, account_id: account_id)
+      condo = property.nil? ? Condominium.find_by(id: listing_id, account_id: account_id) : nil
 
       Appointment.create!(
         account_id: account_id,
         contact_id: contact.id,
         property_id: property&.id,
+        condominium_id: condo&.id,
         user_id: @conversation.user_id,
         appointment_date: args['date'],
         start_time: visit_time,
@@ -410,11 +412,14 @@ class AiAssistantService
         status: 'Agendado'
       )
 
+      listing = property || condo
       property_desc = "Visita Agendada"
-      if property
-        price_str = property.price ? "R$ #{property.price.to_i}" : ""
-        bairro_str = property.neighborhood.present? ? " - #{property.neighborhood}" : ""
-        property_desc = "Visita: #{property.title || property.property_type}#{bairro_str} #{price_str}".strip
+      if listing
+        name = listing.try(:title) || listing.try(:name) || listing.try(:property_type)
+        price_val = listing.try(:price) || listing.try(:min_price)
+        price_str = price_val ? "R$ #{price_val.to_i}" : ""
+        bairro_str = listing.neighborhood.present? ? " - #{listing.neighborhood}" : ""
+        property_desc = "Visita: #{name}#{bairro_str} #{price_str}".strip
       end
 
       contact.update!(
