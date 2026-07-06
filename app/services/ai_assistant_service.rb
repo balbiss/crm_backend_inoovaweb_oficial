@@ -126,11 +126,11 @@ class AiAssistantService
       prompt += "\n\n[CONTEXTO DA INTEGRAÇÃO]: #{@extra_context}"
     end
 
-    status = @conversation.contact.status || 'lead'
+    status = @conversation.contact.status.presence || 'lead'
 
     case status
     when 'lead'
-      prompt += "\n[FASE DE PRÉ-VENDA (SDR)]: Você está atuando como Recepcionista/SDR. O lead acabou de chegar. Seu ÚNICO objetivo é descobrir o que o cliente procura (bairro, valor, quartos) ou a urgência dele. NUNCA tente vender imóveis ou agendar visitas. Apenas acolha, engaje e qualifique. Sempre que entender o que ele procura, use a ferramenta 'qualify_lead' para atualizar a intenção no CRM e avance o lead para 'visit' usando a ferramenta 'move_kanban_card'."
+      prompt += "\n[FASE DE PRÉ-VENDA (SDR)]: Você está atuando como Recepcionista/SDR. O lead acabou de chegar. Seu ÚNICO objetivo é descobrir o que o cliente procura (bairro, valor, quartos) ou a urgência dele. NÃO ofereça proativamente agendar visitas nem empurre outros imóveis — apenas acolha, engaje e qualifique. EXCEÇÃO: se o cliente perguntar diretamente sobre um imóvel/condomínio específico (detalhes, preço, fotos), responda usando 'search_properties'/'send_property_photos' normalmente — isso não conta como 'vender', é só responder o que foi perguntado. Ao apresentar esses dados, nunca despeje a lista crua (ex: 'Segurança: X, Y, Z.') — escolha os destaques relevantes e conte de forma natural, como um bom corretor faria. Sempre que entender o que ele procura, use a ferramenta 'qualify_lead' para atualizar a intenção no CRM e avance o lead para 'visit' usando a ferramenta 'move_kanban_card'.\n[FOTOS]: Se o cliente pedir fotos, SEMPRE chame 'send_property_photos' primeiro (informe 'name' com o nome do imóvel/condomínio mencionado na conversa, mesmo sem saber o ID). Só diga que não há fotos se a ferramenta retornar essa informação — nunca negue de antemão."
     when 'visit', 'atendimento'
       prompt += "\n[FASE DE ATENDIMENTO/VENDAS]: Você está atuando como Corretora Digital. O lead já foi qualificado. Seu foco agora é usar a busca de imóveis ('search_properties'), apresentar opções de forma encantadora e agendar visitas ('create_appointment').\n[REGRAS DE APRESENTAÇÃO DE IMÓVEIS E CONDOMÍNIOS]: Quando apresentar um imóvel OU condomínio/lançamento, NUNCA despeje os dados crus em formato de lista robótica (ex: não copie 'Segurança: X, Y, Z. Lazer: A, B, C.' literalmente). Leia todas as informações retornadas (localização, diferenciais, segurança, lazer, social, serviços, infraestrutura, construtora, prazo de entrega etc.) e escolha os pontos mais relevantes para o que o cliente busca, contando de forma fluida, conversacional e vendedora, como um bom corretor faria — nunca cite todos os itens, apenas os destaques que fariam o cliente se interessar.\n[FOTOS]: Se o cliente pedir fotos, SEMPRE chame 'send_property_photos' primeiro (informe 'name' com o nome do imóvel/condomínio mencionado na conversa, mesmo sem saber o ID). Só diga que não há fotos se a ferramenta retornar essa informação — nunca negue de antemão."
     when 'proposal', 'won'
@@ -144,7 +144,7 @@ class AiAssistantService
   end
 
   def defined_tools
-    status = @conversation.contact.status || 'lead'
+    status = @conversation.contact.status.presence || 'lead'
     
     qualify_tool = {
       type: "function",
@@ -267,7 +267,7 @@ class AiAssistantService
 
     case status
     when 'lead'
-      [qualify_tool, kanban_tool, label_tool, route_tool]
+      [qualify_tool, search_tool, photos_tool, kanban_tool, label_tool, route_tool]
     when 'visit', 'atendimento'
       [search_tool, photos_tool, appointment_tool, kanban_tool, label_tool, route_tool]
     when 'proposal', 'won'
