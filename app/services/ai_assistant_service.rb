@@ -166,10 +166,11 @@ class AiAssistantService
       type: "function",
       function: {
         name: "search_properties",
-        description: "Pesquisa imóveis no banco de dados da imobiliária com base em critérios.",
+        description: "Pesquisa imóveis e condomínios/lançamentos no banco de dados da imobiliária com base em critérios. Use 'name' sempre que o cliente mencionar um nome específico de condomínio/empreendimento/imóvel (ex: 'Di Cavalcanti').",
         parameters: {
           type: "object",
           properties: {
+            name: { type: "string", description: "Nome do condomínio, empreendimento ou imóvel mencionado pelo cliente (busca parcial)." },
             neighborhood: { type: "string", description: "Bairro desejado" },
             bedrooms: { type: "integer", description: "Número de quartos" },
             max_price: { type: "integer", description: "Preço máximo em reais" }
@@ -328,6 +329,7 @@ class AiAssistantService
       prop_query = prop_query.where("neighborhood ILIKE ?", "%#{args['neighborhood']}%") if args['neighborhood'].present?
       prop_query = prop_query.where("bedrooms >= ?", args['bedrooms']) if args['bedrooms'].present?
       prop_query = prop_query.where("price <= ?", args['max_price']) if args['max_price'].present?
+      prop_query = prop_query.where("title ILIKE :q OR condo_name ILIKE :q", q: "%#{args['name']}%") if args['name'].present?
       prop_results = prop_query.limit(3)
       prop_results.each { |p| p.increment!(:search_count) rescue nil }
 
@@ -335,6 +337,7 @@ class AiAssistantService
       condo_query = Condominium.where(account_id: account_id).where.not(status: 'Esgotado')
       condo_query = condo_query.where("neighborhood ILIKE ?", "%#{args['neighborhood']}%") if args['neighborhood'].present?
       condo_query = condo_query.where("min_price <= ?", args['max_price']) if args['max_price'].present?
+      condo_query = condo_query.where("name ILIKE ?", "%#{args['name']}%") if args['name'].present?
       condo_results = condo_query.limit(3)
 
       if prop_results.empty? && condo_results.empty?
