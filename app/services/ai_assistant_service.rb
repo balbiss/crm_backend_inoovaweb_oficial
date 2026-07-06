@@ -528,13 +528,11 @@ class AiAssistantService
                    Condominium.where(account_id: account_id).where("name ILIKE ?", "%#{args['name']}%").first
       end
       if property.nil?
-        # Fallback: nome pode não bater por variação de grafia (ex: "Cavalcanti" vs "Cavalcante").
-        # Se a conta só vende um empreendimento ativo, não há ambiguidade em assumir esse.
-        active_properties = Property.where(account_id: account_id, status: 'Disponível')
+        # Fallback: nome pode não bater por variação de grafia (ex: "Cavalcanti" vs "Cavalcante")
+        # ou o cliente pode ter perguntado sem repetir o nome ("Tem foto?"). Se a conta só
+        # vende UM condomínio, não há ambiguidade em assumir esse, mesmo havendo imóveis avulsos.
         active_condos = Condominium.where(account_id: account_id).where.not(status: 'Esgotado')
-        if active_properties.count.zero? && active_condos.count == 1
-          property = active_condos.first
-        end
+        property = active_condos.first if active_condos.count == 1
       end
       if property
         if property.photos.attached?
