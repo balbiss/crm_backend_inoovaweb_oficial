@@ -145,6 +145,19 @@ module Webhooks
         text = msg.dig(:message, :conversation) || msg.dig(:message, :extendedTextMessage, :text) || ''
         source_id = msg.dig(:key, :id)
 
+        # Clique em anúncio (Instagram/Facebook Ads) chega sem texto próprio: o conteúdo
+        # fica em contextInfo.externalAdReply, não no campo de texto normal. Sem isso, a
+        # mensagem cai no fallback de "arquivo não suportado" e confunde a IA depois.
+        if text.blank?
+          ad_reply = msg.dig(:message, :extendedTextMessage, :contextInfo, :externalAdReply)
+          if ad_reply.present?
+            ad_title = ad_reply[:title].presence
+            ad_body  = ad_reply[:body].presence
+            ad_desc  = [ad_title, ad_body].compact.join(' — ').presence || 'um anúncio'
+            text = "🔖 Cliente iniciou a conversa a partir de #{ad_desc}"
+          end
+        end
+
         Rails.logger.info("Incoming MSG Payload: #{msg.to_json}")
 
         next if Message.exists?(source_id: source_id)
