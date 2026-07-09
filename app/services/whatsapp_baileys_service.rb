@@ -82,10 +82,7 @@ class WhatsappBaileysService
   def send_message(recipient_phone, text, attachment = nil)
     # The recipient_phone must be in format like 5511999999999@s.whatsapp.net
     # If it's just a number, we append the domain
-    jid = recipient_phone
-    unless jid.include?('@')
-      jid = "#{jid.delete('+')}@s.whatsapp.net"
-    end
+    jid = normalize_jid(recipient_phone)
 
     uri = URI.parse("#{@api_url}/connections/#{@phone_number}/send-message")
     request = Net::HTTP::Post.new(uri)
@@ -139,10 +136,7 @@ class WhatsappBaileysService
   end
 
   def send_presence_update(recipient_phone, presence = 'composing')
-    jid = recipient_phone
-    unless jid.include?('@')
-      jid = "#{jid.delete('+')}@s.whatsapp.net"
-    end
+    jid = normalize_jid(recipient_phone)
 
     uri = URI.parse("#{@api_url}/connections/#{@phone_number}/presence")
     request = Net::HTTP::Patch.new(uri)
@@ -220,7 +214,7 @@ class WhatsappBaileysService
 
   # Sends raw binary data as a document (e.g. boleto PDF from Asaas)
   def send_raw_document(jid, filename:, mimetype:, data:, caption: nil)
-    jid = "#{jid.delete('+')}@s.whatsapp.net" unless jid.include?('@')
+    jid = normalize_jid(jid)
 
     uri = URI.parse("#{@api_url}/connections/#{@phone_number}/send-message")
     req = Net::HTTP::Post.new(uri)
@@ -245,7 +239,7 @@ class WhatsappBaileysService
 
   # Sends raw binary data as an image (e.g. PIX QR code from Asaas)
   def send_raw_image(jid, data:, caption: nil)
-    jid = "#{jid.delete('+')}@s.whatsapp.net" unless jid.include?('@')
+    jid = normalize_jid(jid)
 
     uri = URI.parse("#{@api_url}/connections/#{@phone_number}/send-message")
     req = Net::HTTP::Post.new(uri)
@@ -282,5 +276,18 @@ class WhatsappBaileysService
   rescue StandardError => e
     Rails.logger.error("Baileys delete_connection error: #{e.message}")
     false
+  end
+
+  private
+
+  # Aceita um JID pronto (com '@') ou um telefone em qualquer formatação
+  # (com parenteses, espacos, hifens etc) e devolve sempre um JID valido,
+  # prefixando o DDI 55 quando ausente.
+  def normalize_jid(phone_or_jid)
+    return phone_or_jid if phone_or_jid.include?('@')
+
+    digits = phone_or_jid.gsub(/\D/, '')
+    digits = "55#{digits}" unless digits.start_with?('55')
+    "#{digits}@s.whatsapp.net"
   end
 end
