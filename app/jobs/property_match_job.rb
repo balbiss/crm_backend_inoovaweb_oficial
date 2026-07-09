@@ -58,7 +58,7 @@ class PropertyMatchJob < ApplicationJob
       next unless jid
 
       msg = build_match_message(property, lead)
-      baileys.send_message(jid, msg)
+      baileys_id = baileys.send_message(jid, msg)
 
       Message.create!(
         account: account,
@@ -66,7 +66,7 @@ class PropertyMatchJob < ApplicationJob
         text: msg,
         sender_type: 'User',
         sender_id: nil,
-        source_id: "match_#{SecureRandom.hex(8)}",
+        source_id: baileys_id.presence || "match_#{SecureRandom.hex(8)}",
         status: :delivered
       )
       conversation.update_column(:last_activity_at, Time.current)

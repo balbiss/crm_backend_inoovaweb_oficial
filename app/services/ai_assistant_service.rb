@@ -552,8 +552,8 @@ class AiAssistantService
                 caption = index == 0 ? "Aqui estão as fotos: #{label}" : ""
                 
                 # Envia via API do Baileys
-                baileys_service.send_message(remote_jid, caption, photo)
-                
+                baileys_id = baileys_service.send_message(remote_jid, caption, photo)
+
                 # Salva a mensagem no CRM e já anexa a imagem para que o WebSockets dispare com a foto
                 begin
                   Message.create!(
@@ -562,7 +562,7 @@ class AiAssistantService
                     text: caption.present? ? caption : "📎 Imagem enviada",
                     sender_type: 'User',
                     sender_id: nil,
-                    source_id: "ai_photo_#{SecureRandom.hex(8)}",
+                    source_id: baileys_id.presence || "ai_photo_#{SecureRandom.hex(8)}",
                     status: :delivered,
                     attachment: photo.blob
                   )

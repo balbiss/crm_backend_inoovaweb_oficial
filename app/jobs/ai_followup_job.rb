@@ -76,16 +76,19 @@ class AiFollowupJob < ApplicationJob
         # Enviar via Baileys
         baileys_service = WhatsappBaileysService.new(inbox)
         remote_jid = conversation.contact.jid || conversation.contact.phone
-        baileys_service.send_message(remote_jid, followup_text)
+        baileys_id = baileys_service.send_message(remote_jid, followup_text)
 
-        # Salvar mensagem
+        # Salvar mensagem usando o ID do Baileys como source_id, para que o
+        # eco (fromMe) desta mensagem seja reconhecido no webhook e não seja
+        # confundido com intervenção humana (o que pausava a IA e aplicava
+        # a tag agente_off sem atribuir a nenhum corretor).
         Message.create!(
           account: conversation.account,
           conversation: conversation,
           text: followup_text,
           sender_type: 'User',
           sender_id: nil, # Indica que foi o bot
-          source_id: "followup_#{SecureRandom.hex(8)}",
+          source_id: baileys_id.presence || "followup_#{SecureRandom.hex(8)}",
           status: :delivered
         )
 
@@ -109,7 +112,7 @@ class AiFollowupJob < ApplicationJob
       begin
         baileys_service = WhatsappBaileysService.new(inbox)
         remote_jid = conversation.contact.jid || conversation.contact.phone
-        baileys_service.send_message(remote_jid, inbox.followup_closing_message)
+        baileys_id = baileys_service.send_message(remote_jid, inbox.followup_closing_message)
 
         Message.create!(
           account: conversation.account,
@@ -117,7 +120,7 @@ class AiFollowupJob < ApplicationJob
           text: inbox.followup_closing_message,
           sender_type: 'User',
           sender_id: nil,
-          source_id: "closing_#{SecureRandom.hex(8)}",
+          source_id: baileys_id.presence || "closing_#{SecureRandom.hex(8)}",
           status: :delivered
         )
       rescue StandardError => e
