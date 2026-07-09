@@ -4,7 +4,7 @@ class PropertiesController < ApplicationController
   # GET /properties
   def index
     base = current_user.account.properties.with_attached_photos
-    @properties = if current_user.role == 'admin' || current_user.role == 'empresa' || current_user.permissions&.dig('view_all_properties')
+    @properties = if current_user.role == 'admin' || current_user.role == 'empresa' || current_user.permissions&.dig('view_all_properties') || current_user.has_permission?('admin')
       base
     else
       base.where(user_id: current_user.id)

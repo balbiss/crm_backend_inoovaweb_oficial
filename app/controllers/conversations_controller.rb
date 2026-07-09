@@ -9,7 +9,8 @@ class ConversationsController < ApplicationController
 
     # Corretores (atendente) só veem conversas atribuídas a eles
     # Não mostrar não-atribuídas: evita que fujam da fila do rodízio
-    if current_user.atendente?
+    # Exceção: quem tem permissions['admin'] (Acesso Administrativo Total) vê tudo
+    if current_user.atendente? && !current_user.has_permission?('admin')
       base = base.where(user_id: current_user.id)
     end
 

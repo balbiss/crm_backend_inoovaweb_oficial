@@ -1,6 +1,6 @@
 class DashboardController < ApplicationController
   def index
-    is_owner   = current_user.empresa? || current_user.admin? || current_user.has_permission?('view_all_contacts')
+    is_owner   = current_user.empresa? || current_user.admin? || current_user.has_permission?('view_all_contacts') || current_user.has_permission?('admin')
     account    = current_user.account
     uid        = current_user.id
     today      = Date.current
