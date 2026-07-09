@@ -13,7 +13,8 @@ class Users::SessionsController < Devise::SessionsController
         last_name: resource.last_name,
         role: resource.role,
         account_id: resource.account_id,
-        account_name: resource.account&.name
+        account_name: resource.account&.name,
+        permissions: resource.permissions
       }
     }, status: :ok
   end

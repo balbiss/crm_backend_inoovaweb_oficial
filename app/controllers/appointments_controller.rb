@@ -131,7 +131,7 @@ class AppointmentsController < ApplicationController
 
   private
     def owner?
-      current_user.empresa? || current_user.admin?
+      current_user.empresa? || current_user.admin? || current_user.has_permission?('admin')
     end
 
     def base_scope

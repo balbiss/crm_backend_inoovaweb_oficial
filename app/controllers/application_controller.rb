@@ -21,6 +21,6 @@ class ApplicationController < ActionController::API
   end
 
   def owner?
-    current_user&.empresa? || current_user&.admin?
+    current_user&.empresa? || current_user&.admin? || current_user&.has_permission?('admin')
   end
 end
