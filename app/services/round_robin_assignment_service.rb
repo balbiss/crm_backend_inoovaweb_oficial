@@ -15,11 +15,22 @@ class RoundRobinAssignmentService
         .lock
         .first
 
+      # Fallback: se ninguém está na fila de rodízio (ex: conta com um único
+      # corretor que nunca teve o toggle ativado), ainda assim atribui para
+      # algum corretor ativo da conta em vez de deixar o lead sem ninguém.
+      agent ||= User
+        .where(account_id: account.id, status: 'active', department: 'corretor')
+        .order(:id)
+        .lock
+        .first
+
       return nil unless agent
 
-      max_pos = User.where(account_id: account.id, available_for_roundrobin: true)
-                    .maximum(:queue_position) || 0
-      agent.update_columns(queue_position: max_pos + 1)
+      if agent.available_for_roundrobin
+        max_pos = User.where(account_id: account.id, available_for_roundrobin: true)
+                      .maximum(:queue_position) || 0
+        agent.update_columns(queue_position: max_pos + 1)
+      end
 
       conversation.update!(user_id: agent.id)
       assigned_agent = agent
