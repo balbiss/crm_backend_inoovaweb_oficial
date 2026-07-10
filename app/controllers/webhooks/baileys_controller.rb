@@ -250,16 +250,23 @@ module Webhooks
             api_key = inbox.api_key.presence || ENV['BAILEYS_API_KEY'].presence || 'innovaweb2025'
             uri = URI.parse(api_url)
             uri.path = "/media/#{source_id}"
-            req = Net::HTTP::Get.new(uri)
-            req["x-api-key"] = api_key
-            
-            begin
-              res = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https') do |http|
-                http.request(req)
+
+            # A conexão do Baileys com o WhatsApp reconecta sozinha algumas vezes
+            # (stream errors 503/515 são normais no protocolo). Se o download cair
+            # bem nesse instante, tenta mais 2 vezes antes de desistir de vez.
+            [0, 2, 4].each do |wait_seconds|
+              sleep wait_seconds if wait_seconds.positive?
+              begin
+                req = Net::HTTP::Get.new(uri)
+                req["x-api-key"] = api_key
+                res = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https') do |http|
+                  http.request(req)
+                end
+                decoded_media = res.body if res.is_a?(Net::HTTPSuccess)
+              rescue => e
+                Rails.logger.error("Failed to download media for message #{source_id} (tentativa com espera de #{wait_seconds}s): #{e.message}")
               end
-              decoded_media = res.body if res.is_a?(Net::HTTPSuccess)
-            rescue => e
-              Rails.logger.error("Failed to download media for message #{source_id}: #{e.message}")
+              break if decoded_media.present?
             end
           end
           
