@@ -81,6 +81,38 @@ services:
           cpus: "0.25"
           memory: 128M
 
+  ## --------------------------- WHATSAPP (BAILEYS) --------------------------- ##
+
+  baileys:
+    image: ghcr.io/fazer-ai/baileys-api:latest
+    command:
+      - sh
+      - "-c"
+      - "bun manage-api-keys create user staging2026 && bun start"
+    environment:
+      - NODE_ENV=production
+      - PORT=3025
+      - REDIS_URL=redis://:3437520a512564feaa841cab07bf3835b724d7f881b159679da24464940189f5@redis:6379/1
+      - LOG_LEVEL=warn
+      - BAILEYS_LOG_LEVEL=error
+      - BAILEYS_PROVIDER_DEFAULT_API_KEY=staging2026
+      - IGNORE_GROUP_MESSAGES=true
+      - IGNORE_STATUS_MESSAGES=true
+    volumes:
+      - staging_baileys_storage:/app/storage
+    networks:
+      - inoovawebpro
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512M
+
   ## --------------------------- BACKEND RAILS --------------------------- ##
 
   backend:
@@ -212,6 +244,7 @@ volumes:
   staging_db_backups:
   staging_redis_data:
   staging_rails_storage:
+  staging_baileys_storage:
 
 networks:
   inoovawebpro:
