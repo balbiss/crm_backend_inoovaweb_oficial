@@ -138,6 +138,8 @@ services:
       - RAILS_LOG_TO_STDOUT=true
       - RAILS_SERVE_STATIC_FILES=true
       - TZ=America/Sao_Paulo
+      - VAPID_PUBLIC_KEY=BCSseiFs0Ioq2HKKc5X1mv614gBbeAbApz4jNWc7ygycQXxcF7M0lOjIBHz9GJEas7PujF6cpPL-3RXM6fGQKPo
+      - VAPID_PRIVATE_KEY=PLJkeaYUD7X80cgRgdf9YfvhHbIa_GLQOLeNYQPTXzo
     volumes:
       - staging_rails_storage:/rails/storage
     networks:
