@@ -1,0 +1,219 @@
+version: "3.7"
+
+## Stack de STAGING (ambiente de testes) - totalmente separada da produção.
+## Banco, Redis e volumes próprios, segredos próprios (gerados do zero,
+## nunca reaproveitados de produção). Nomes de serviço curtos (db, redis,
+## backend, worker, frontend) para não colidir com os nomes da stack de
+## produção (crm_db, crm_redis etc), já que ambas compartilham a mesma
+## rede externa "inoovawebpro".
+
+services:
+
+  ## --------------------------- BANCO DE DADOS --------------------------- ##
+
+  db:
+    image: postgres:17-alpine
+    environment:
+      - POSTGRES_USER=crm_staging
+      - POSTGRES_PASSWORD=e3a60b9cc2abbdef079e76112458ae168e301828cbe556a55100eced086485cc
+      - POSTGRES_DB=crm_staging
+    volumes:
+      - staging_postgres_data:/var/lib/postgresql/data
+    networks:
+      - inoovawebpro
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  ## --------------------------- BACKUP AUTOMÁTICO (mesmo padrão da produção) --------------------------- ##
+
+  db_backup:
+    image: prodrigestivill/postgres-backup-local:latest
+    environment:
+      - POSTGRES_HOST=db
+      - POSTGRES_DB=crm_staging
+      - POSTGRES_USER=crm_staging
+      - POSTGRES_PASSWORD=e3a60b9cc2abbdef079e76112458ae168e301828cbe556a55100eced086485cc
+      - SCHEDULE=@daily
+      - BACKUP_KEEP_DAYS=3
+      - BACKUP_KEEP_WEEKS=1
+      - BACKUP_KEEP_MONTHS=0
+      - TZ=America/Sao_Paulo
+    volumes:
+      - staging_db_backups:/backups
+    networks:
+      - inoovawebpro
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+
+  ## --------------------------- REDIS --------------------------- ##
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --requirepass 3437520a512564feaa841cab07bf3835b724d7f881b159679da24464940189f5 --appendonly yes
+    volumes:
+      - staging_redis_data:/data
+    networks:
+      - inoovawebpro
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+
+  ## --------------------------- BACKEND RAILS --------------------------- ##
+
+  backend:
+    image: ghcr.io/balbiss/crm-backend:staging
+    command: >
+      bash -c "until bundle exec rails db:prepare; do echo 'Aguardando banco de dados...'; sleep 5; done && bundle exec rails db:migrate:cache && bundle exec rails db:migrate:queue && bundle exec rails db:migrate:cable && bundle exec rails server -b 0.0.0.0 -p 80"
+    environment:
+      - RAILS_ENV=production
+      - PGHOST=db
+      - PGPORT=5432
+      - PGDATABASE=crm_staging
+      - PGUSER=crm_staging
+      - PGPASSWORD=e3a60b9cc2abbdef079e76112458ae168e301828cbe556a55100eced086485cc
+      - REDIS_URL=redis://:3437520a512564feaa841cab07bf3835b724d7f881b159679da24464940189f5@redis:6379/0
+      - RAILS_MASTER_KEY=2f6c7b40f9e5036469e6b107eb04a315
+      - SECRET_KEY_BASE=b868d567cdc090425e39336e1b90c71fcd7882479ffcd7ec571423b8ac41d3f5a48298395b345d3da4a49ba641e44a4c6d215eff188211ed5512b9a1b08f554d
+      - API_HOST=https://api-staging.visitaia.com.br
+      - BACKEND_URL=https://api-staging.visitaia.com.br
+      - FRONTEND_URL=https://staging.visitaia.com.br
+      - BAILEYS_API_URL=http://baileys:3025
+      - BAILEYS_API_KEY=staging2026
+      - APP_NAME=VisitaIA CRM (Staging)
+      - RAILS_LOG_TO_STDOUT=true
+      - RAILS_SERVE_STATIC_FILES=true
+      - TZ=America/Sao_Paulo
+    volumes:
+      - staging_rails_storage:/rails/storage
+    networks:
+      - inoovawebpro
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.staging_backend.rule=Host(`api-staging.visitaia.com.br`)
+        - traefik.http.routers.staging_backend.entrypoints=websecure
+        - traefik.http.routers.staging_backend.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.staging_backend.service=staging_backend
+        - traefik.http.services.staging_backend.loadbalancer.server.port=80
+        - traefik.http.services.staging_backend.loadbalancer.passHostHeader=1
+        - traefik.http.services.staging_backend.loadbalancer.responseForwarding.flushInterval=100ms
+
+  ## --------------------------- WORKER (JOBS) --------------------------- ##
+
+  worker:
+    image: ghcr.io/balbiss/crm-backend:staging
+    command: bash -c "sleep 40 && bundle exec rails solid_queue:start"
+    environment:
+      - RAILS_ENV=production
+      - PGHOST=db
+      - PGPORT=5432
+      - PGDATABASE=crm_staging
+      - PGUSER=crm_staging
+      - PGPASSWORD=e3a60b9cc2abbdef079e76112458ae168e301828cbe556a55100eced086485cc
+      - REDIS_URL=redis://:3437520a512564feaa841cab07bf3835b724d7f881b159679da24464940189f5@redis:6379/0
+      - RAILS_MASTER_KEY=2f6c7b40f9e5036469e6b107eb04a315
+      - SECRET_KEY_BASE=b868d567cdc090425e39336e1b90c71fcd7882479ffcd7ec571423b8ac41d3f5a48298395b345d3da4a49ba641e44a4c6d215eff188211ed5512b9a1b08f554d
+      - BAILEYS_API_URL=http://baileys:3025
+      - BAILEYS_API_KEY=staging2026
+      - RAILS_LOG_TO_STDOUT=true
+      - TZ=America/Sao_Paulo
+    volumes:
+      - staging_rails_storage:/rails/storage
+    networks:
+      - inoovawebpro
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+  ## --------------------------- FRONTEND VUE --------------------------- ##
+
+  frontend:
+    image: ghcr.io/balbiss/crm-frontend:staging
+    environment:
+      - API_URL=https://api-staging.visitaia.com.br
+      - APP_NAME=VisitaIA CRM (Staging)
+      - APP_LOGO_URL=
+      - APP_PRIMARY_COLOR=#1f93ff
+      - APP_ACCENT_COLOR=#8b5cf6
+      - APP_SUPPORT_EMAIL=suporte@visitaia.com.br
+      - APP_FOOTER_TEXT=Ambiente de testes - VisitaIA
+    networks:
+      - inoovawebpro
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+      labels:
+        - traefik.enable=true
+        - traefik.http.routers.staging_frontend.rule=Host(`staging.visitaia.com.br`)
+        - traefik.http.routers.staging_frontend.entrypoints=websecure
+        - traefik.http.routers.staging_frontend.tls.certresolver=letsencryptresolver
+        - traefik.http.routers.staging_frontend.service=staging_frontend
+        - traefik.http.services.staging_frontend.loadbalancer.server.port=80
+        - traefik.http.services.staging_frontend.loadbalancer.passHostHeader=1
+
+## ================================================================
+
+volumes:
+  staging_postgres_data:
+  staging_db_backups:
+  staging_redis_data:
+  staging_rails_storage:
+
+networks:
+  inoovawebpro:
+    external: true
+    name: inoovawebpro
