@@ -10,11 +10,34 @@ class Message < ApplicationRecord
 
   after_create_commit :broadcast_to_conversation
   after_create_commit :update_conversation_activity
+  after_create_commit :notify_agent_of_new_message
 
   private
 
   def update_conversation_activity
     conversation.update_column(:last_activity_at, Time.current)
+  end
+
+  def notify_agent_of_new_message
+    return unless sender_type == 'Contact'
+    return if is_private
+
+    agent = conversation.user
+    return unless agent
+
+    contact = conversation.contact
+    name = contact&.name.presence || contact&.phone.presence || 'Novo contato'
+    body_text = text.presence || (attachment.attached? ? 'Enviou um anexo' : 'Nova mensagem')
+
+    WebPushService.notify(
+      agent,
+      title: "Nova mensagem de #{name}",
+      body:  body_text.truncate(120),
+      url:   '/conversas',
+      tag:   "conversation-#{conversation_id}"
+    )
+  rescue => e
+    Rails.logger.error("Message push notification error: #{e.message}")
   end
 
   def broadcast_to_conversation
