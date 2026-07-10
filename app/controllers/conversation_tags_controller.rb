@@ -26,6 +26,16 @@ class ConversationTagsController < ApplicationController
   def destroy
     tag = @conversation.tags.find_by(id: params[:id])
     if tag
+      # Remover a etiqueta 'agente_off' manualmente equivale a clicar "Retomar IA":
+      # também limpa a pausa e tira 'com_atendente' junto, já que a IA está retomando.
+      # O corretor já atribuído (conversation.user_id) não é alterado aqui.
+      if tag.name == 'agente_off'
+        contact_jid = @conversation.contact.jid.presence || @conversation.contact.phone
+        Rails.cache.delete("ai_paused_#{@conversation.inbox_id}_#{contact_jid}")
+        com_atendente = @conversation.tags.find { |t| t.name == 'com_atendente' }
+        @conversation.tags.delete(com_atendente) if com_atendente
+      end
+
       @conversation.tags.delete(tag)
       broadcast_update
     end

@@ -297,19 +297,29 @@ module Webhooks
 
           if is_paused
             Rails.logger.info("IA pulou atendimento para #{remote_jid} porque está em cooldown (Humano assumiu).")
-          elsif conversation.status == 'resolved'
-            # Cliente voltou depois de conversa encerrada — reabrir para o corretor
-            conversation.update!(status: :open)
-            # Pausa a IA 30 min para o corretor ter prioridade no atendimento do retorno
-            Rails.cache.write("ai_paused_#{inbox.id}_#{remote_jid}", Time.current.to_i, expires_in: 30.minutes)
-            ActionCable.server.broadcast("conversations_channel_#{conversation.account_id}", {
-              event:        'conversation_updated',
-              conversation: { id: conversation.id, status: 'open', snoozed_until: nil }
-            })
-            Rails.logger.info("Conversa #{conversation.id} reaberta automaticamente (cliente retornou após encerramento).")
           else
-            # Conversa open ou snoozed: a IA deve responder
-            if conversation.status == 'snoozed'
+            # Conversa resolved, open ou snoozed: a IA deve responder
+            if conversation.status == 'resolved'
+              # Cliente voltou depois de conversa encerrada — reabre e a IA já
+              # retoma o atendimento (mantém o mesmo corretor já atribuído,
+              # isso aqui não mexe em conversation.user_id)
+              conversation.update!(status: :open)
+              tags_a_remover = conversation.tags.select { |t| %w[agente_off com_atendente].include?(t.name) }
+              tags_a_remover.each { |t| conversation.conversation_tags.where(tag_id: t.id).delete_all }
+              conversation.tags.reset
+              ActionCable.server.broadcast("conversations_channel_#{conversation.account_id}", {
+                event:        'conversation_updated',
+                conversation: { id: conversation.id, status: 'open', snoozed_until: nil }
+              })
+              if tags_a_remover.any?
+                ActionCable.server.broadcast("conversations_channel_#{conversation.account_id}", {
+                  event: 'conversation_tags_updated',
+                  conversation_id: conversation.id,
+                  tags: conversation.tags.map { |t| { id: t.id, name: t.name, color: t.color } }
+                })
+              end
+              Rails.logger.info("Conversa #{conversation.id} reaberta automaticamente (cliente retornou após encerramento) — IA retomada.")
+            elsif conversation.status == 'snoozed'
               # Cliente enviou mensagem durante o adiamento — cancelar snooze
               conversation.update!(status: :open, snoozed_until: nil)
               ActionCable.server.broadcast("conversations_channel_#{conversation.account_id}", {
