@@ -3,6 +3,7 @@ require "test_helper"
 class ContactsControllerTest < ActionDispatch::IntegrationTest
   setup do
     @contact = contacts(:one)
+    sign_in users(:one)
   end
 
   test "should get index" do

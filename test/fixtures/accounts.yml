@@ -4,10 +4,10 @@ one:
   name: MyString
   stripe_customer_id: MyString
   stripe_subscription_id: MyString
-  subscription_status: MyString
+  subscription_status: active
 
 two:
   name: MyString
   stripe_customer_id: MyString
   stripe_subscription_id: MyString
-  subscription_status: MyString
+  subscription_status: active
