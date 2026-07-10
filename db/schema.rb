@@ -15,13 +15,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
   enable_extension "pg_catalog.plpgsql"
 
   create_table "accounts", force: :cascade do |t|
+    t.string "asaas_api_key"
+    t.boolean "asaas_sandbox", default: false, null: false
     t.datetime "created_at", null: false
     t.string "name"
+    t.string "portal_token"
     t.string "stripe_customer_id"
     t.string "stripe_subscription_id"
     t.string "subscription_status"
     t.datetime "trial_ends_at"
     t.datetime "updated_at", null: false
+    t.index ["portal_token"], name: "index_accounts_on_portal_token", unique: true
   end
 
   create_table "active_storage_attachments", force: :cascade do |t|
@@ -65,6 +69,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
     t.string "status"
     t.datetime "updated_at", null: false
     t.bigint "user_id"
+    t.index ["account_id", "appointment_date"], name: "idx_appointments_account_date"
+    t.index ["account_id", "status"], name: "idx_appointments_account_status"
     t.index ["account_id"], name: "index_appointments_on_account_id"
     t.index ["condominium_id"], name: "index_appointments_on_condominium_id"
     t.index ["contact_id"], name: "index_appointments_on_contact_id"
@@ -113,6 +119,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
     t.string "sub_type"
     t.string "tags"
     t.datetime "updated_at", null: false
+    t.index ["account_id", "neighborhood"], name: "idx_condominia_account_neighborhood"
+    t.index ["account_id", "status"], name: "idx_condominia_account_status"
     t.index ["account_id"], name: "index_condominia_on_account_id"
   end
 
@@ -120,6 +128,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
     t.bigint "account_id", null: false
     t.string "address_complement"
     t.string "address_number"
+    t.string "asaas_customer_id"
     t.string "avatar_url"
     t.text "bio"
     t.date "birth_date"
@@ -150,9 +159,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
     t.string "temperature"
     t.datetime "updated_at", null: false
     t.bigint "user_id"
+    t.index ["account_id", "created_at"], name: "idx_contacts_account_created_at"
+    t.index ["account_id", "jid"], name: "index_contacts_on_account_id_and_jid"
+    t.index ["account_id", "source"], name: "idx_contacts_account_source"
+    t.index ["account_id", "status"], name: "index_contacts_on_account_id_and_status"
+    t.index ["account_id", "temperature"], name: "idx_contacts_account_temperature"
     t.index ["account_id"], name: "index_contacts_on_account_id"
+    t.index ["asaas_customer_id"], name: "index_contacts_on_asaas_customer_id"
+    t.index ["jid"], name: "index_contacts_on_jid"
     t.index ["phone"], name: "index_contacts_on_phone"
     t.index ["user_id"], name: "index_contacts_on_user_id"
+  end
+
+  create_table "conversation_tags", force: :cascade do |t|
+    t.bigint "conversation_id", null: false
+    t.bigint "tag_id", null: false
+    t.index ["conversation_id", "tag_id"], name: "index_conversation_tags_on_conversation_and_tag", unique: true
+    t.index ["conversation_id"], name: "index_conversation_tags_on_conversation_id"
+    t.index ["tag_id"], name: "index_conversation_tags_on_tag_id"
   end
 
   create_table "conversations", force: :cascade do |t|
@@ -162,14 +186,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
     t.integer "followup_count", default: 0
     t.bigint "inbox_id"
     t.datetime "last_activity_at"
+    t.datetime "snoozed_until"
     t.string "source"
     t.integer "status", default: 0
     t.integer "unread_count", default: 0
     t.datetime "updated_at", null: false
     t.bigint "user_id"
+    t.index ["account_id", "status"], name: "index_conversations_on_account_id_and_status"
     t.index ["account_id"], name: "index_conversations_on_account_id"
     t.index ["contact_id"], name: "index_conversations_on_contact_id"
+    t.index ["inbox_id", "status"], name: "idx_conversations_inbox_status"
     t.index ["inbox_id"], name: "index_conversations_on_inbox_id"
+    t.index ["last_activity_at"], name: "index_conversations_on_last_activity_at"
     t.index ["status"], name: "index_conversations_on_status"
     t.index ["user_id"], name: "index_conversations_on_user_id"
   end
@@ -193,6 +221,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
   end
 
   create_table "inboxes", force: :cascade do |t|
+    t.bigint "account_id"
     t.boolean "ai_enabled", default: false
     t.string "ai_name"
     t.text "ai_prompt"
@@ -213,6 +242,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
     t.datetime "updated_at", null: false
     t.jsonb "working_hours", default: []
     t.boolean "working_hours_enabled", default: false
+    t.index ["account_id"], name: "index_inboxes_on_account_id"
     t.index ["phone_number"], name: "index_inboxes_on_phone_number"
   end
 
@@ -228,6 +258,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
     t.text "text"
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_messages_on_account_id"
+    t.index ["conversation_id", "created_at"], name: "index_messages_on_conversation_id_and_created_at"
     t.index ["conversation_id"], name: "index_messages_on_conversation_id"
     t.index ["sender_type", "sender_id"], name: "index_messages_on_sender_type_and_sender_id"
     t.index ["source_id"], name: "index_messages_on_source_id"
@@ -253,6 +284,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
     t.datetime "read_at"
     t.string "title"
     t.datetime "updated_at", null: false
+    t.index ["account_id", "read_at"], name: "idx_notifications_account_read_at"
     t.index ["account_id"], name: "index_notifications_on_account_id"
   end
 
@@ -289,6 +321,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
     t.decimal "price"
     t.string "property_type"
     t.string "reference_point"
+    t.integer "search_count", default: 0, null: false
     t.string "show_address_mode"
     t.string "state"
     t.string "status"
@@ -299,8 +332,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
     t.datetime "updated_at", null: false
     t.string "usage_type"
     t.bigint "user_id"
+    t.index ["account_id", "bedrooms"], name: "idx_properties_account_bedrooms"
+    t.index ["account_id", "listing_type"], name: "idx_properties_account_listing_type"
+    t.index ["account_id", "neighborhood"], name: "idx_properties_account_neighborhood"
+    t.index ["account_id", "price"], name: "idx_properties_account_price"
+    t.index ["account_id", "status"], name: "idx_properties_account_status"
     t.index ["account_id"], name: "index_properties_on_account_id"
     t.index ["user_id"], name: "index_properties_on_user_id"
+  end
+
+  create_table "push_subscriptions", force: :cascade do |t|
+    t.text "auth_key", null: false
+    t.datetime "created_at", null: false
+    t.text "endpoint", null: false
+    t.text "p256dh_key", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["endpoint"], name: "index_push_subscriptions_on_endpoint", unique: true
+    t.index ["user_id"], name: "index_push_subscriptions_on_user_id"
   end
 
   create_table "scheduled_messages", force: :cascade do |t|
@@ -311,6 +360,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
     t.text "text"
     t.datetime "updated_at", null: false
     t.index ["conversation_id"], name: "index_scheduled_messages_on_conversation_id"
+    t.index ["status", "send_at"], name: "idx_scheduled_messages_status_send_at"
   end
 
   create_table "support_ticket_messages", force: :cascade do |t|
@@ -344,7 +394,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
 
   create_table "users", force: :cascade do |t|
     t.bigint "account_id"
+    t.boolean "available_for_roundrobin", default: false, null: false
     t.datetime "created_at", null: false
+    t.string "department", default: "corretor", null: false
     t.string "email", default: "", null: false
     t.string "encrypted_password", default: "", null: false
     t.string "first_name"
@@ -352,13 +404,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
     t.string "last_name"
     t.jsonb "permissions", default: {}
     t.string "phone"
+    t.integer "queue_position"
     t.datetime "remember_created_at"
     t.datetime "reset_password_sent_at"
     t.string "reset_password_token"
     t.integer "role"
     t.string "status", default: "active"
     t.datetime "updated_at", null: false
+    t.index ["account_id", "available_for_roundrobin", "queue_position"], name: "index_users_on_account_roundrobin_queue"
     t.index ["account_id"], name: "index_users_on_account_id"
+    t.index ["department"], name: "index_users_on_department"
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["jti"], name: "index_users_on_jti"
     t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
@@ -367,19 +422,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
   add_foreign_key "appointments", "accounts"
+  add_foreign_key "appointments", "condominia"
   add_foreign_key "appointments", "contacts"
   add_foreign_key "appointments", "properties"
   add_foreign_key "appointments", "users"
   add_foreign_key "condominia", "accounts"
   add_foreign_key "contacts", "accounts"
-  add_foreign_key "appointments", "condominia", column: "condominium_id"
   add_foreign_key "contacts", "users"
+  add_foreign_key "conversation_tags", "conversations"
+  add_foreign_key "conversation_tags", "tags"
   add_foreign_key "conversations", "accounts"
   add_foreign_key "conversations", "contacts"
   add_foreign_key "conversations", "inboxes"
   add_foreign_key "conversations", "users"
   add_foreign_key "inbox_members", "inboxes"
   add_foreign_key "inbox_members", "users"
+  add_foreign_key "inboxes", "accounts"
   add_foreign_key "messages", "accounts"
   add_foreign_key "messages", "conversations"
   add_foreign_key "notes", "accounts"
@@ -388,6 +446,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
   add_foreign_key "notifications", "accounts"
   add_foreign_key "properties", "accounts"
   add_foreign_key "properties", "users"
+  add_foreign_key "push_subscriptions", "users"
   add_foreign_key "scheduled_messages", "conversations"
   add_foreign_key "support_ticket_messages", "support_tickets"
   add_foreign_key "support_ticket_messages", "users"

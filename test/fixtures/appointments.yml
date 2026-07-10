@@ -3,7 +3,6 @@
 one:
   account: one
   contact: one
-  property: one
   broker_name: MyString
   status: MyString
   appointment_date: 2026-06-15
@@ -13,7 +12,6 @@ one:
 two:
   account: two
   contact: two
-  property: two
   broker_name: MyString
   status: MyString
   appointment_date: 2026-06-15
