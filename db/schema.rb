@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_10_190020) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -239,11 +239,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
     t.text "out_of_office_message"
     t.string "phone_number"
     t.string "provider"
+    t.bigint "round_robin_group_id"
     t.datetime "updated_at", null: false
     t.jsonb "working_hours", default: []
     t.boolean "working_hours_enabled", default: false
     t.index ["account_id"], name: "index_inboxes_on_account_id"
     t.index ["phone_number"], name: "index_inboxes_on_phone_number"
+    t.index ["round_robin_group_id"], name: "index_inboxes_on_round_robin_group_id"
   end
 
   create_table "messages", force: :cascade do |t|
@@ -352,6 +354,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
     t.index ["user_id"], name: "index_push_subscriptions_on_user_id"
   end
 
+  create_table "round_robin_groups", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.string "name", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_round_robin_groups_on_account_id"
+  end
+
   create_table "scheduled_messages", force: :cascade do |t|
     t.bigint "conversation_id", null: false
     t.datetime "created_at", null: false
@@ -409,6 +419,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
     t.datetime "reset_password_sent_at"
     t.string "reset_password_token"
     t.integer "role"
+    t.bigint "round_robin_group_id"
     t.string "status", default: "active"
     t.datetime "updated_at", null: false
     t.index ["account_id", "available_for_roundrobin", "queue_position"], name: "index_users_on_account_roundrobin_queue"
@@ -417,6 +428,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["jti"], name: "index_users_on_jti"
     t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
+    t.index ["round_robin_group_id"], name: "index_users_on_round_robin_group_id"
   end
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
@@ -438,6 +450,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
   add_foreign_key "inbox_members", "inboxes"
   add_foreign_key "inbox_members", "users"
   add_foreign_key "inboxes", "accounts"
+  add_foreign_key "inboxes", "round_robin_groups"
   add_foreign_key "messages", "accounts"
   add_foreign_key "messages", "conversations"
   add_foreign_key "notes", "accounts"
@@ -447,9 +460,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_06_163000) do
   add_foreign_key "properties", "accounts"
   add_foreign_key "properties", "users"
   add_foreign_key "push_subscriptions", "users"
+  add_foreign_key "round_robin_groups", "accounts"
   add_foreign_key "scheduled_messages", "conversations"
   add_foreign_key "support_ticket_messages", "support_tickets"
   add_foreign_key "support_ticket_messages", "users"
   add_foreign_key "support_tickets", "accounts"
   add_foreign_key "tags", "accounts"
+  add_foreign_key "users", "round_robin_groups"
 end

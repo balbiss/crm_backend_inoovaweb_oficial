@@ -28,6 +28,7 @@ Rails.application.routes.draw do
       get :queue
     end
   end
+  resources :round_robin_groups, only: %i[index create update destroy]
   resources :contacts do
     member do
       post :merge

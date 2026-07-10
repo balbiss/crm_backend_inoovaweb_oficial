@@ -8,18 +8,22 @@ class RoundRobinAssignmentService
 
     ApplicationRecord.transaction do
       account = conversation.account.lock!
+      group_id = conversation.inbox&.round_robin_group_id
 
-      agent = User
-        .where(account_id: account.id, status: 'active', available_for_roundrobin: true, department: 'corretor')
+      base_scope = User.where(account_id: account.id, status: 'active', department: 'corretor')
+      base_scope = base_scope.where(round_robin_group_id: group_id) if group_id.present?
+
+      agent = base_scope
+        .where(available_for_roundrobin: true)
         .order(Arel.sql('queue_position ASC NULLS FIRST, id ASC'))
         .lock
         .first
 
       # Fallback: se ninguém está na fila de rodízio (ex: conta com um único
       # corretor que nunca teve o toggle ativado), ainda assim atribui para
-      # algum corretor ativo da conta em vez de deixar o lead sem ninguém.
-      agent ||= User
-        .where(account_id: account.id, status: 'active', department: 'corretor')
+      # algum corretor ativo do grupo (ou da conta, se o inbox não tiver
+      # grupo definido) em vez de deixar o lead sem ninguém.
+      agent ||= base_scope
         .order(:id)
         .lock
         .first

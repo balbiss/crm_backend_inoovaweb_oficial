@@ -9,6 +9,7 @@ class Account < ApplicationRecord
   has_many :tags, dependent: :destroy
   has_many :inboxes, dependent: :destroy
   has_many :appointments, dependent: :destroy
+  has_many :round_robin_groups, dependent: :destroy
 
   before_create :set_trial_period
   before_create :generate_portal_token

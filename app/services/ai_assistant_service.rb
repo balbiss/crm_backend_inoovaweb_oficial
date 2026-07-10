@@ -495,9 +495,19 @@ class AiAssistantService
 
     when "route_to_department"
       dept = args['department'].to_s
-      agent = User.where(account_id: account_id, status: 'active', department: dept)
-                  .order(Arel.sql('queue_position ASC NULLS FIRST, id ASC'))
-                  .first
+      agent = nil
+
+      ApplicationRecord.transaction do
+        agent = User.where(account_id: account_id, status: 'active', department: dept)
+                    .order(Arel.sql('queue_position ASC NULLS FIRST, id ASC'))
+                    .lock
+                    .first
+
+        if agent&.available_for_roundrobin
+          max_pos = User.where(account_id: account_id, available_for_roundrobin: true).maximum(:queue_position) || 0
+          agent.update_columns(queue_position: max_pos + 1)
+        end
+      end
 
       if agent
         @conversation.update!(user_id: agent.id)

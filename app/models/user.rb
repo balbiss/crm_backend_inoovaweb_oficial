@@ -2,6 +2,7 @@ class User < ApplicationRecord
   include Devise::JWT::RevocationStrategies::JTIMatcher
 
   belongs_to :account, optional: true
+  belongs_to :round_robin_group, optional: true
 
   has_many :support_tickets
   has_many :support_ticket_messages, dependent: :destroy
