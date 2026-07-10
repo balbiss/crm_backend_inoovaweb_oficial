@@ -33,6 +33,7 @@ class ContactsController < ApplicationController
   # POST /contacts
   def create
     @contact = Contact.new(contact_params)
+    @contact.account_id = current_user.account_id
     @contact.user_id ||= current_user.id
 
     if @contact.save
@@ -111,7 +112,7 @@ class ContactsController < ApplicationController
     # Only allow a list of trusted parameters through.
     def contact_params
       params.require(:contact).permit(
-      :name, :email, :phone, :jid, :avatar_url, :status, :account_id, 
+      :name, :email, :phone, :jid, :avatar_url, :status,
       :first_name, :last_name, :city, :country, :bio, :company_name, 
       :temperature, :source, :intention,
       :cpf, :birth_date, :profession, :gross_income, :down_payment, :fgts_balance, :dependents,

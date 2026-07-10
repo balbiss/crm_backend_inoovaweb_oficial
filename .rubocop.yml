@@ -4,6 +4,15 @@ inherit_from:
 # Omakase Ruby styling for Rails
 inherit_gem: { rubocop-rails-omakase: rubocop.yml }
 
+AllCops:
+  Exclude:
+    - 'db/queue_migrate/**/*'
+    - 'db/cache_migrate/**/*'
+    - 'db/cable_migrate/**/*'
+    - 'db/queue_schema.rb'
+    - 'db/cache_schema.rb'
+    - 'db/cable_schema.rb'
+
 # Overwrite or add rules to create your own house style
 #
 # # Use `[a, [b, c]]` not `[ a, [ b, c ] ]`

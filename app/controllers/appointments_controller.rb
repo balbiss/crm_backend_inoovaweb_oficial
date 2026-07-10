@@ -162,6 +162,6 @@ class AppointmentsController < ApplicationController
     end
 
     def appointment_params
-      params.require(:appointment).permit(:account_id, :contact_id, :property_id, :condominium_id, :broker_name, :status, :appointment_date, :start_time, :end_time)
+      params.require(:appointment).permit(:contact_id, :property_id, :condominium_id, :broker_name, :status, :appointment_date, :start_time, :end_time)
     end
 end
