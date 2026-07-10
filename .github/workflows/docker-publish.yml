@@ -2,7 +2,7 @@ name: Build & Publish Backend Image
 
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
 
 env:
   REGISTRY: ghcr.io
@@ -35,7 +35,8 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=staging,enable=${{ github.ref == 'refs/heads/staging' }}
             type=sha,prefix=sha-
 
       - name: Build e push
