@@ -60,6 +60,10 @@ module Webhooks
     # (equivalente ao "fromMe real" do Baileys) — pausa a IA.
     def handle_echo(inbox, igsid, mid)
       return if mid.present? && Message.exists?(source_id: mid)
+      # A IA sinaliza esse cache ANTES de mandar a mensagem (e o registro local
+      # só é criado DEPOIS da API confirmar o envio) — sem essa checagem, o eco
+      # pode chegar primeiro e ser confundido com intervenção humana real.
+      return if Rails.cache.read("ai_is_replying_#{inbox.id}_#{igsid}")
       return unless inbox.ai_enabled
 
       Rails.logger.info("IA pausada para #{igsid} devido a intervenção humana (echo real do Instagram).")

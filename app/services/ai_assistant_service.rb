@@ -288,12 +288,25 @@ class AiAssistantService
         return choice["content"]
       end
 
-      # Processa todos os tool_calls desta rodada
+      # Processa todos os tool_calls desta rodada — a IA às vezes chama a
+      # mesma ferramenta com os mesmos argumentos duas vezes na mesma resposta
+      # (comportamento do próprio modelo, não do nosso código); como algumas
+      # ferramentas têm efeito colateral real (mandar foto, agendar visita),
+      # a segunda chamada idêntica não é executada de novo.
+      seen_calls = Set.new
       all_tool_results = choice["tool_calls"].map do |tool_call|
         function_name = tool_call.dig("function", "name")
-        arguments = JSON.parse(tool_call.dig("function", "arguments"))
-        result = execute_tool(function_name, arguments)
-        { tool_call: tool_call, name: function_name, result: result.to_s }
+        raw_arguments = tool_call.dig("function", "arguments")
+        arguments = JSON.parse(raw_arguments)
+        dedup_key = [function_name, raw_arguments]
+
+        if seen_calls.include?(dedup_key)
+          { tool_call: tool_call, name: function_name, result: "Ação já realizada nesta mesma resposta, não repetida." }
+        else
+          seen_calls << dedup_key
+          result = execute_tool(function_name, arguments)
+          { tool_call: tool_call, name: function_name, result: result.to_s }
+        end
       end
 
       # Adiciona a chamada do assistente e todos os resultados ao histórico
@@ -560,6 +573,11 @@ class AiAssistantService
               property.photos.first(5).each_with_index do |photo, index|
                 label = property.try(:title) || property.try(:name) || property.try(:property_type) || 'imóvel'
                 caption = index == 0 ? "Aqui estão as fotos: #{label}" : ""
+
+                # Precisa ser sinalizado ANTES do envio: o eco da mensagem pode
+                # chegar no webhook antes do Message.create! abaixo terminar,
+                # e sem isso seria confundido com intervenção humana real.
+                Rails.cache.write("ai_is_replying_#{@inbox.id}_#{remote_jid}", true, expires_in: 30.seconds)
 
                 # Envia via API do provedor do inbox (Baileys ou Instagram)
                 baileys_id = messaging_service.send_message(remote_jid, caption, photo)
