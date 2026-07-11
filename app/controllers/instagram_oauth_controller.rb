@@ -33,9 +33,14 @@ class InstagramOauthController < ApplicationController
     data = verifier.verify(params[:state])
     account_id = data['account_id']
 
-    short_lived_token, ig_user_id = exchange_code_for_token(params[:code])
+    short_lived_token, = exchange_code_for_token(params[:code])
     long_lived_token, expires_in = exchange_for_long_lived_token(short_lived_token)
-    username = fetch_instagram_username(ig_user_id, long_lived_token)
+    # O "user_id" devolvido na troca do code é o ASID (escopo app+usuário) —
+    # o webhook identifica a conta pelo IGSID de verdade, então buscamos ele
+    # separado via /me (mesmo campo "user_id", mas com significado diferente
+    # nesse endpoint).
+    ig_user_id, username = fetch_instagram_identity(long_lived_token)
+    raise 'Não foi possível identificar a conta do Instagram (user_id ausente).' if ig_user_id.blank?
 
     inbox = Inbox.find_or_initialize_by(account_id: account_id, provider: 'instagram', instagram_business_account_id: ig_user_id)
     inbox.name = "Instagram - #{username}".presence || 'Instagram'
@@ -61,8 +66,9 @@ class InstagramOauthController < ApplicationController
     "#{ENV.fetch('API_HOST', 'http://localhost:3000')}/instagram_oauth/callback"
   end
 
-  # Token de curta duração (~1h) — a resposta já inclui o user_id (IGSID da
-  # própria conta profissional conectada), sem precisar de chamada extra.
+  # Token de curta duração (~1h). O "user_id" que essa resposta traz é um
+  # ASID (escopo app+usuário), não o IGSID real — por isso é descartado
+  # pelo chamador e buscamos o IGSID de verdade depois via #fetch_instagram_identity.
   def exchange_code_for_token(code)
     uri = URI.parse('https://api.instagram.com/oauth/access_token')
     request = Net::HTTP::Post.new(uri)
@@ -94,14 +100,17 @@ class InstagramOauthController < ApplicationController
     [parsed['access_token'], parsed['expires_in']]
   end
 
-  def fetch_instagram_username(ig_user_id, access_token)
-    uri = URI.parse("https://graph.instagram.com/#{GRAPH_API_VERSION}/#{ig_user_id}")
-    uri.query = URI.encode_www_form({ fields: 'username', access_token: access_token })
+  # Retorna [igsid, username] usando o próprio token (rota "/me"), que é a
+  # forma confiável de pegar o IGSID de verdade (o mesmo usado pelo webhook).
+  def fetch_instagram_identity(access_token)
+    uri = URI.parse("https://graph.instagram.com/#{GRAPH_API_VERSION}/me")
+    uri.query = URI.encode_www_form({ fields: 'user_id,username', access_token: access_token })
     response = Net::HTTP.get_response(uri)
-    return nil unless response.is_a?(Net::HTTPSuccess)
+    return [nil, nil] unless response.is_a?(Net::HTTPSuccess)
 
-    JSON.parse(response.body)['username']
+    parsed = JSON.parse(response.body)
+    [parsed['user_id'], parsed['username']]
   rescue StandardError
-    nil
+    [nil, nil]
   end
 end
