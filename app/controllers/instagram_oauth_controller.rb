@@ -45,10 +45,10 @@ class InstagramOauthController < ApplicationController
     inbox.instagram_username = username
     inbox.save!
 
-    redirect_to "#{ENV.fetch('FRONTEND_URL')}/settings/inboxes/new?instagram_inbox_id=#{inbox.id}"
+    redirect_to "#{ENV.fetch('FRONTEND_URL')}/settings/inboxes/new?instagram_inbox_id=#{inbox.id}", allow_other_host: true
   rescue ActiveSupport::MessageVerifier::InvalidSignature, StandardError => e
     Rails.logger.error("Instagram OAuth callback error: #{e.message}")
-    redirect_to "#{ENV.fetch('FRONTEND_URL')}/settings/inboxes/new?instagram_error=#{CGI.escape(e.message)}"
+    redirect_to "#{ENV.fetch('FRONTEND_URL')}/settings/inboxes/new?instagram_error=#{CGI.escape(e.message)}", allow_other_host: true
   end
 
   private
