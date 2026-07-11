@@ -48,7 +48,7 @@ gem "stripe"
 gem "ruby-openai"
 
 # Web Push Notifications (PWA)
-gem "webpush"
+gem "webpush", "~> 1.1"
 
 group :development, :test do
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
