@@ -555,10 +555,10 @@ class AiAssistantService
         property = Property.where(account_id: account_id).where("title ILIKE :q OR condo_name ILIKE :q", q: "%#{args['name']}%").first ||
                    Condominium.where(account_id: account_id).where("name ILIKE ?", "%#{args['name']}%").first
       end
-      if property.nil?
-        # Fallback: nome pode não bater por variação de grafia (ex: "Cavalcanti" vs "Cavalcante")
-        # ou o cliente pode ter perguntado sem repetir o nome ("Tem foto?"). Se a conta só
-        # vende UM condomínio, não há ambiguidade em assumir esse, mesmo havendo imóveis avulsos.
+      if property.nil? && args['name'].blank? && args['property_id'].blank?
+        # Fallback só quando o cliente pergunta sem citar nome/ID nenhum ("Tem foto?").
+        # Se citou um nome (mesmo que não bata por variação de grafia) e não achou,
+        # é melhor dizer que não encontrou do que arriscar mandar a foto errada.
         active_condos = Condominium.where(account_id: account_id).where.not(status: 'Esgotado')
         property = active_condos.first if active_condos.count == 1
       end
