@@ -552,8 +552,21 @@ class AiAssistantService
                    Condominium.find_by(id: args['property_id'], account_id: account_id)
       end
       if property.nil? && args['name'].present?
-        property = Property.where(account_id: account_id).where("title ILIKE :q OR condo_name ILIKE :q", q: "%#{args['name']}%").first ||
-                   Condominium.where(account_id: account_id).where("name ILIKE ?", "%#{args['name']}%").first
+        # Busca por palavra-chave em vez de frase exata: a IA raramente repete o
+        # título cadastrado ao pé da letra ("apartamento do centro" vs "Apartamento
+        # 3 quartos - Centro"), então bater a frase inteira falha na maioria das vezes.
+        words = args['name'].to_s.split(/\s+/).reject { |w| w.length <= 2 }
+        if words.any?
+          prop_conditions = words.map { '(title ILIKE ? OR condo_name ILIKE ?)' }.join(' OR ')
+          prop_values = words.flat_map { |w| ["%#{w}%", "%#{w}%"] }
+          property = Property.where(account_id: account_id).where(prop_conditions, *prop_values).first
+
+          if property.nil?
+            condo_conditions = words.map { 'name ILIKE ?' }.join(' OR ')
+            condo_values = words.map { |w| "%#{w}%" }
+            property = Condominium.where(account_id: account_id).where(condo_conditions, *condo_values).first
+          end
+        end
       end
       if property.nil? && args['name'].blank? && args['property_id'].blank?
         # Fallback só quando o cliente pergunta sem citar nome/ID nenhum ("Tem foto?").
