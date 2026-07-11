@@ -86,10 +86,11 @@ class ChargesController < ApplicationController
   end
 
   def send_via_whatsapp(asaas, charge_id, bank_slip_url, billing_type, description, valor_fmt, venc_fmt)
-    conversation = @contact.conversations.order(updated_at: :desc).first
-    return unless conversation
+    # Boleto/PIX só existe via WhatsApp — busca o inbox WhatsApp da conta, não o
+    # inbox da conversa mais recente (que pode ser do Instagram, sem telefone).
+    inbox = @contact.account.inboxes.find_by(provider: 'baileys')
+    return unless inbox
 
-    inbox   = conversation.inbox
     baileys = WhatsappBaileysService.new(inbox)
     return unless baileys.connected?
 

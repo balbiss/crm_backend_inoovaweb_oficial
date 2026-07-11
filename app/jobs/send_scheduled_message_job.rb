@@ -8,6 +8,16 @@ class SendScheduledMessageJob < ApplicationJob
 
     conversation = scheduled_message.conversation
     inbox = conversation.inbox
+
+    # Mensagem por iniciativa própria (agendada) — só permitido no WhatsApp;
+    # no Instagram violaria a janela de 24h da Meta se o lead já não tiver
+    # respondido nesse meio tempo.
+    if inbox&.provider == 'instagram'
+      Rails.logger.info("ScheduledMessage #{scheduled_message_id} não enviada: canal Instagram não permite envio proativo.")
+      scheduled_message.update!(status: 'failed')
+      return
+    end
+
     baileys_service = WhatsappBaileysService.new(inbox)
     remote_jid = conversation.contact.jid || conversation.contact.phone
 

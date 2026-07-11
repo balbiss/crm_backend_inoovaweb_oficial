@@ -120,7 +120,7 @@ class ConversationsController < ApplicationController
 
   def ai_status
     conversation = current_user.account.conversations.includes(:contact).find(params[:id])
-    contact_jid = conversation.contact.jid.presence || conversation.contact.phone
+    contact_jid = conversation.contact.channel_identifier
     cache_key = "ai_paused_#{conversation.inbox_id}_#{contact_jid}"
     paused_at = Rails.cache.read(cache_key)
 
@@ -134,7 +134,7 @@ class ConversationsController < ApplicationController
 
   def resume_ai
     conversation = current_user.account.conversations.includes(:contact, :tags).find(params[:id])
-    contact_jid = conversation.contact.jid.presence || conversation.contact.phone
+    contact_jid = conversation.contact.channel_identifier
     Rails.cache.delete("ai_paused_#{conversation.inbox_id}_#{contact_jid}")
     agente_off = conversation.tags.find { |t| t.name == 'agente_off' }
     if agente_off
@@ -314,7 +314,7 @@ class ConversationsController < ApplicationController
     inbox   = conversation.inbox
 
     # Pausa a IA por 30 dias (permanente para fins práticos)
-    jid = contact.jid.presence || contact.phone
+    jid = contact.channel_identifier
     if jid.present? && inbox.present?
       Rails.cache.write("ai_paused_#{inbox.id}_#{jid}", Time.current.to_i, expires_in: 30.days)
     end
@@ -332,8 +332,8 @@ class ConversationsController < ApplicationController
     # Envia mensagem de encerramento
     if params[:send_closing_message].to_s == 'true' && params[:closing_message_text].present?
       begin
-        recipient = contact.jid.presence || contact.phone
-        baileys_id = WhatsappBaileysService.new(inbox).send_message(recipient, params[:closing_message_text]) if inbox.present? && recipient.present?
+        recipient = contact.channel_identifier
+        baileys_id = inbox.messaging_service.send_message(recipient, params[:closing_message_text]) if inbox.present? && recipient.present?
         closing_msg = Message.create!(
           account:     conversation.account,
           conversation: conversation,

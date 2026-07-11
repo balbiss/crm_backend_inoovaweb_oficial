@@ -22,12 +22,12 @@ class MessagesController < ApplicationController
     end
 
     if message.save
-      if !is_private_msg && conversation.inbox&.provider == 'baileys'
+      if !is_private_msg && %w[baileys instagram].include?(conversation.inbox&.provider)
         begin
-          recipient = conversation.contact.jid.presence || conversation.contact.phone
-          WhatsappBaileysService.new(conversation.inbox).send_message(recipient, message.text, message.attachment)
+          recipient = conversation.contact.channel_identifier
+          conversation.inbox.messaging_service.send_message(recipient, message.text, message.attachment)
         rescue StandardError => e
-          Rails.logger.error("Failed to send message via Baileys: #{e.message}")
+          Rails.logger.error("Failed to send message via #{conversation.inbox.provider}: #{e.message}")
         end
       end
 

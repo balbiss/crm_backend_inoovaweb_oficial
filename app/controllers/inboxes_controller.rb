@@ -64,8 +64,7 @@ class InboxesController < ApplicationController
   end
 
   def status
-    baileys = WhatsappBaileysService.new(@inbox)
-    connected = baileys.connected?
+    connected = @inbox.messaging_service.connected?
     render json: { connected: connected }
   end
 
@@ -74,9 +73,9 @@ class InboxesController < ApplicationController
     contact_count = @inbox.conversations.joins(:contact).select('contacts.id').distinct.count
 
     begin
-      WhatsappBaileysService.new(@inbox).delete_connection
+      @inbox.messaging_service.delete_connection
     rescue StandardError => e
-      Rails.logger.error("Failed to delete connection in Baileys: #{e.message}")
+      Rails.logger.error("Failed to delete connection in #{@inbox.provider}: #{e.message}")
     end
 
     # Preserva histórico: conversations ficam com inbox_id = null (dependent: :nullify)

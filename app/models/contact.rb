@@ -9,6 +9,10 @@ class Contact < ApplicationRecord
 
   after_save :broadcast_contact_update, if: -> { saved_changes.keys.any? { |k| BROADCAST_FIELDS.include?(k) } }
 
+  def channel_identifier
+    jid.presence || instagram_id.presence || phone
+  end
+
   private
 
   def broadcast_contact_update

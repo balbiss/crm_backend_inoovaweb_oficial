@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_10_190020) do
+ActiveRecord::Schema[8.1].define(version: 2026_07_11_000002) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -145,6 +145,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_10_190020) do
     t.decimal "fgts_balance"
     t.string "first_name"
     t.decimal "gross_income"
+    t.string "instagram_id"
     t.string "intention"
     t.string "jid"
     t.string "last_name"
@@ -165,7 +166,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_10_190020) do
     t.index ["account_id", "status"], name: "index_contacts_on_account_id_and_status"
     t.index ["account_id", "temperature"], name: "idx_contacts_account_temperature"
     t.index ["account_id"], name: "index_contacts_on_account_id"
+    t.index ["account_id", "instagram_id"], name: "index_contacts_on_account_id_and_instagram_id"
     t.index ["asaas_customer_id"], name: "index_contacts_on_asaas_customer_id"
+    t.index ["instagram_id"], name: "index_contacts_on_instagram_id"
     t.index ["jid"], name: "index_contacts_on_jid"
     t.index ["phone"], name: "index_contacts_on_phone"
     t.index ["user_id"], name: "index_contacts_on_user_id"
@@ -235,6 +238,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_10_190020) do
     t.integer "followup_max_attempts", default: 3
     t.boolean "followup_send_closing_message", default: false
     t.integer "followup_wait_time_minutes", default: 120
+    t.string "instagram_access_token"
+    t.string "instagram_business_account_id"
+    t.string "instagram_page_id"
+    t.datetime "instagram_token_expires_at"
+    t.string "instagram_username"
     t.string "name"
     t.text "out_of_office_message"
     t.string "phone_number"
@@ -244,6 +252,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_10_190020) do
     t.jsonb "working_hours", default: []
     t.boolean "working_hours_enabled", default: false
     t.index ["account_id"], name: "index_inboxes_on_account_id"
+    t.index ["instagram_page_id"], name: "index_inboxes_on_instagram_page_id"
     t.index ["phone_number"], name: "index_inboxes_on_phone_number"
     t.index ["round_robin_group_id"], name: "index_inboxes_on_round_robin_group_id"
   end

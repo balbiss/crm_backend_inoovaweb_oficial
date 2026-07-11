@@ -140,6 +140,9 @@ services:
       - TZ=America/Sao_Paulo
       - VAPID_PUBLIC_KEY=BCSseiFs0Ioq2HKKc5X1mv614gBbeAbApz4jNWc7ygycQXxcF7M0lOjIBHz9GJEas7PujF6cpPL-3RXM6fGQKPo
       - VAPID_PRIVATE_KEY=PLJkeaYUD7X80cgRgdf9YfvhHbIa_GLQOLeNYQPTXzo
+      - INSTAGRAM_APP_ID=
+      - INSTAGRAM_APP_SECRET=
+      - INSTAGRAM_WEBHOOK_VERIFY_TOKEN=
     volumes:
       - staging_rails_storage:/rails/storage
     networks:

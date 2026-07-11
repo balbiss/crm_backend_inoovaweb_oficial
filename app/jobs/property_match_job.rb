@@ -50,7 +50,9 @@ class PropertyMatchJob < ApplicationJob
     })
 
     matched.each do |lead|
-      conversation = lead.conversations.find { |c| c.inbox.present? }
+      # Mensagem por iniciativa própria (fora de resposta a mensagem do lead) —
+      # só permitido no WhatsApp; no Instagram violaria a janela de 24h da Meta.
+      conversation = lead.conversations.find { |c| c.inbox.present? && c.inbox.provider == 'baileys' }
       next unless conversation
 
       baileys = WhatsappBaileysService.new(conversation.inbox)

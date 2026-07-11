@@ -554,15 +554,15 @@ class AiAssistantService
           # Envia as fotos em background para não travar a resposta principal da IA
           Thread.new do
             begin
-              baileys_service = WhatsappBaileysService.new(@inbox)
-              remote_jid = @conversation.contact.jid || @conversation.contact.phone
-              
+              messaging_service = @inbox.messaging_service
+              remote_jid = @conversation.contact.channel_identifier
+
               property.photos.first(5).each_with_index do |photo, index|
                 label = property.try(:title) || property.try(:name) || property.try(:property_type) || 'imóvel'
                 caption = index == 0 ? "Aqui estão as fotos: #{label}" : ""
-                
-                # Envia via API do Baileys
-                baileys_id = baileys_service.send_message(remote_jid, caption, photo)
+
+                # Envia via API do provedor do inbox (Baileys ou Instagram)
+                baileys_id = messaging_service.send_message(remote_jid, caption, photo)
 
                 # Salva a mensagem no CRM e já anexa a imagem para que o WebSockets dispare com a foto
                 begin
@@ -602,7 +602,7 @@ class AiAssistantService
   end
 
   def pause_ai_permanently
-    jid = @conversation.contact.jid.presence || @conversation.contact.phone
+    jid = @conversation.contact.channel_identifier
     return unless jid
 
     # Pausa sem expiração — só é retomada pelo botão "Retomar IA"

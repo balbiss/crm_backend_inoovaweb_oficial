@@ -82,13 +82,18 @@ Rails.application.routes.draw do
       post :generate_prompt
     end
   end
-  
+
+  get 'instagram_oauth/authorize_url', to: 'instagram_oauth#authorize_url'
+  get 'instagram_oauth/callback',      to: 'instagram_oauth#callback'
+
   namespace :webhooks do
     post 'baileys',              to: 'baileys#create'
     post 'stripe',               to: 'stripe#create'
     post 'canal_pro/:token',     to: 'canal_pro#create', defaults: { source_portal: 'canal_pro' }
     post 'zap/:token',           to: 'canal_pro#create', defaults: { source_portal: 'zap' }
     post 'viva_real/:token',     to: 'canal_pro#create', defaults: { source_portal: 'viva_real' }
+    get  'instagram',            to: 'instagram#verify'
+    post 'instagram',            to: 'instagram#create'
   end
 
   namespace :admin do

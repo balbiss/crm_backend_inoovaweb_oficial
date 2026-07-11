@@ -19,7 +19,9 @@ class AgentNotificationService
   def send_whatsapp_notification
     return unless @agent.phone.present?
 
-    inbox = @conversation.inbox
+    # Notificação vai sempre pro celular do corretor via WhatsApp, independente
+    # do canal de onde veio o lead (ex: conversa do Instagram não tem "telefone").
+    inbox = @conversation.account.inboxes.find_by(provider: 'baileys')
     return unless inbox.present?
 
     baileys = WhatsappBaileysService.new(inbox)

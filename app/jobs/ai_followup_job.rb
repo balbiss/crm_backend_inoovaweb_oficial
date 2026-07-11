@@ -2,8 +2,9 @@ class AiFollowupJob < ApplicationJob
   queue_as :default
 
   def perform
-    # Encontra inboxes com followup ativado
-    Inbox.where(followup_enabled: true).find_each do |inbox|
+    # Encontra inboxes com followup ativado (defensivo: Instagram nunca deve
+    # rodar follow-up automático, mesmo que a validação do model seja contornada)
+    Inbox.where(followup_enabled: true, provider: 'baileys').find_each do |inbox|
       process_inbox(inbox)
     end
   end

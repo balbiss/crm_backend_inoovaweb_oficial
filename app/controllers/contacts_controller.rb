@@ -88,18 +88,24 @@ class ContactsController < ApplicationController
 
   def block
     @contact.update!(status: 'blocked')
-    # Pausa a IA permanentemente para esse contato
-    jid = @contact.jid.presence || @contact.phone
-    inbox = current_user.account.inboxes.first
-    Rails.cache.write("ai_paused_#{inbox&.id}_#{jid}", Time.current.to_i) if inbox && jid
+    # Pausa a IA permanentemente para esse contato, em cada inbox onde ele tem conversa
+    jid = @contact.channel_identifier
+    if jid.present?
+      @contact.conversations.where.not(inbox_id: nil).distinct.pluck(:inbox_id).each do |inbox_id|
+        Rails.cache.write("ai_paused_#{inbox_id}_#{jid}", Time.current.to_i)
+      end
+    end
     render json: { message: 'Contato bloqueado com sucesso', status: 'blocked' }
   end
 
   def unblock
     @contact.update!(status: 'active')
-    jid = @contact.jid.presence || @contact.phone
-    inbox = current_user.account.inboxes.first
-    Rails.cache.delete("ai_paused_#{inbox&.id}_#{jid}") if inbox && jid
+    jid = @contact.channel_identifier
+    if jid.present?
+      @contact.conversations.where.not(inbox_id: nil).distinct.pluck(:inbox_id).each do |inbox_id|
+        Rails.cache.delete("ai_paused_#{inbox_id}_#{jid}")
+      end
+    end
     render json: { message: 'Contato desbloqueado com sucesso', status: 'active' }
   end
 
