@@ -39,13 +39,19 @@ class InstagramMessagingService
   end
 
   def fetch_profile_picture_url(igsid)
-    uri = URI.parse("https://graph.instagram.com/#{GRAPH_API_VERSION}/#{igsid}?fields=profile_pic&access_token=#{CGI.escape(@access_token.to_s)}")
+    fetch_participant_profile(igsid)&.dig('profile_pic')
+  end
+
+  # Perfil de quem mandou o Direct (nome/username/foto) — usado pra não deixar
+  # o Contact salvo só com o IGSID numérico como nome.
+  def fetch_participant_profile(igsid)
+    uri = URI.parse("https://graph.instagram.com/#{GRAPH_API_VERSION}/#{igsid}?fields=name,username,profile_pic&access_token=#{CGI.escape(@access_token.to_s)}")
     response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 5, read_timeout: 10) { |h| h.get(uri) }
     return nil unless response.is_a?(Net::HTTPSuccess)
 
-    JSON.parse(response.body)['profile_pic']
+    JSON.parse(response.body)
   rescue => e
-    Rails.logger.error("InstagramMessagingService fetch_profile_picture_url error: #{e.message}")
+    Rails.logger.error("InstagramMessagingService fetch_participant_profile error: #{e.message}")
     nil
   end
 

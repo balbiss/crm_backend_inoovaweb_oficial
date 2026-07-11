@@ -122,8 +122,14 @@ module Webhooks
     def fetch_profile_info(inbox, contact)
       Thread.new do
         begin
-          url = inbox.messaging_service.fetch_profile_picture_url(contact.instagram_id)
-          contact.update(avatar_url: url) if url.present?
+          profile = inbox.messaging_service.fetch_participant_profile(contact.instagram_id)
+          if profile.present?
+            updates = {}
+            updates[:avatar_url] = profile['profile_pic'] if profile['profile_pic'].present?
+            display_name = profile['name'].presence || profile['username'].presence
+            updates[:name] = display_name if display_name.present? && contact.name == contact.instagram_id
+            contact.update(updates) if updates.present?
+          end
         rescue => e
           Rails.logger.error("Failed to fetch Instagram profile info for #{contact.instagram_id}: #{e.message}")
         end
