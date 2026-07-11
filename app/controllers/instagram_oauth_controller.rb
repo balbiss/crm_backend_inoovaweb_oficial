@@ -2,9 +2,13 @@ require 'net/http'
 require 'uri'
 require 'json'
 
+# Fluxo "Instagram API with Instagram Login": login direto com a conta do
+# Instagram (Business/Creator), sem precisar de uma Página do Facebook
+# vinculada. Diferente do "Instagram API with Facebook Login", que usa
+# graph.facebook.com e permissões pages_*.
 class InstagramOauthController < ApplicationController
   GRAPH_API_VERSION = 'v21.0'.freeze
-  SCOPES = 'instagram_basic,instagram_manage_messages,pages_show_list,pages_manage_metadata'.freeze
+  SCOPES = 'instagram_business_basic,instagram_business_manage_messages'.freeze
 
   before_action :authenticate_user!, only: :authorize_url
   before_action :require_owner!, only: :authorize_url
@@ -19,7 +23,7 @@ class InstagramOauthController < ApplicationController
       response_type: 'code',
       state: state
     }
-    url = "https://www.facebook.com/#{GRAPH_API_VERSION}/dialog/oauth?#{params.to_query}"
+    url = "https://www.instagram.com/oauth/authorize?#{params.to_query}"
     render json: { url: url }
   end
 
@@ -29,18 +33,16 @@ class InstagramOauthController < ApplicationController
     data = verifier.verify(params[:state])
     account_id = data['account_id']
 
-    short_lived_token = exchange_code_for_token(params[:code])
+    short_lived_token, ig_user_id = exchange_code_for_token(params[:code])
     long_lived_token, expires_in = exchange_for_long_lived_token(short_lived_token)
+    username = fetch_instagram_username(ig_user_id, long_lived_token)
 
-    page = find_page_with_instagram_account(long_lived_token)
-    raise 'Nenhuma Página com conta Instagram Business vinculada foi encontrada.' unless page
-
-    inbox = Inbox.find_or_initialize_by(account_id: account_id, provider: 'instagram', instagram_page_id: page[:page_id])
-    inbox.name = "Instagram - #{page[:username]}".presence || 'Instagram'
-    inbox.instagram_business_account_id = page[:ig_user_id]
-    inbox.instagram_access_token = page[:page_access_token]
+    inbox = Inbox.find_or_initialize_by(account_id: account_id, provider: 'instagram', instagram_business_account_id: ig_user_id)
+    inbox.name = "Instagram - #{username}".presence || 'Instagram'
+    inbox.instagram_page_id = ig_user_id
+    inbox.instagram_access_token = long_lived_token
     inbox.instagram_token_expires_at = expires_in.present? ? Time.current + expires_in.to_i.seconds : nil
-    inbox.instagram_username = page[:username]
+    inbox.instagram_username = username
     inbox.save!
 
     redirect_to "#{ENV.fetch('FRONTEND_URL')}/settings/inboxes/new?instagram_inbox_id=#{inbox.id}"
@@ -59,27 +61,31 @@ class InstagramOauthController < ApplicationController
     "#{ENV.fetch('API_HOST', 'http://localhost:3000')}/instagram_oauth/callback"
   end
 
+  # Token de curta duração (~1h) — a resposta já inclui o user_id (IGSID da
+  # própria conta profissional conectada), sem precisar de chamada extra.
   def exchange_code_for_token(code)
-    uri = URI.parse("https://graph.facebook.com/#{GRAPH_API_VERSION}/oauth/access_token")
-    uri.query = URI.encode_www_form({
+    uri = URI.parse('https://api.instagram.com/oauth/access_token')
+    request = Net::HTTP::Post.new(uri)
+    request.set_form_data(
       client_id: ENV.fetch('INSTAGRAM_APP_ID'),
       client_secret: ENV.fetch('INSTAGRAM_APP_SECRET'),
+      grant_type: 'authorization_code',
       redirect_uri: callback_url,
       code: code
-    })
-    response = Net::HTTP.get_response(uri)
+    )
+    response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true) { |http| http.request(request) }
     raise "Falha ao trocar code por token: #{response.body}" unless response.is_a?(Net::HTTPSuccess)
 
-    JSON.parse(response.body)['access_token']
+    parsed = JSON.parse(response.body)
+    [parsed['access_token'], parsed['user_id']]
   end
 
   def exchange_for_long_lived_token(short_lived_token)
-    uri = URI.parse("https://graph.facebook.com/#{GRAPH_API_VERSION}/oauth/access_token")
+    uri = URI.parse('https://graph.instagram.com/access_token')
     uri.query = URI.encode_www_form({
-      grant_type: 'fb_exchange_token',
-      client_id: ENV.fetch('INSTAGRAM_APP_ID'),
+      grant_type: 'ig_exchange_token',
       client_secret: ENV.fetch('INSTAGRAM_APP_SECRET'),
-      fb_exchange_token: short_lived_token
+      access_token: short_lived_token
     })
     response = Net::HTTP.get_response(uri)
     raise "Falha ao trocar por token de longa duração: #{response.body}" unless response.is_a?(Net::HTTPSuccess)
@@ -88,36 +94,8 @@ class InstagramOauthController < ApplicationController
     [parsed['access_token'], parsed['expires_in']]
   end
 
-  def find_page_with_instagram_account(user_token)
-    uri = URI.parse("https://graph.facebook.com/#{GRAPH_API_VERSION}/me/accounts")
-    uri.query = URI.encode_www_form({ access_token: user_token })
-    response = Net::HTTP.get_response(uri)
-    raise "Falha ao listar Páginas: #{response.body}" unless response.is_a?(Net::HTTPSuccess)
-
-    pages = JSON.parse(response.body)['data'] || []
-    pages.each do |page|
-      page_id = page['id']
-      page_access_token = page['access_token']
-
-      details_uri = URI.parse("https://graph.facebook.com/#{GRAPH_API_VERSION}/#{page_id}")
-      details_uri.query = URI.encode_www_form({ fields: 'instagram_business_account', access_token: page_access_token })
-      details_response = Net::HTTP.get_response(details_uri)
-      next unless details_response.is_a?(Net::HTTPSuccess)
-
-      details = JSON.parse(details_response.body)
-      ig_account = details['instagram_business_account']
-      next unless ig_account
-
-      ig_user_id = ig_account['id']
-      username = fetch_instagram_username(ig_user_id, page_access_token)
-
-      return { page_id: page_id, page_access_token: page_access_token, ig_user_id: ig_user_id, username: username }
-    end
-    nil
-  end
-
   def fetch_instagram_username(ig_user_id, access_token)
-    uri = URI.parse("https://graph.facebook.com/#{GRAPH_API_VERSION}/#{ig_user_id}")
+    uri = URI.parse("https://graph.instagram.com/#{GRAPH_API_VERSION}/#{ig_user_id}")
     uri.query = URI.encode_www_form({ fields: 'username', access_token: access_token })
     response = Net::HTTP.get_response(uri)
     return nil unless response.is_a?(Net::HTTPSuccess)

@@ -39,7 +39,7 @@ class InstagramMessagingService
   end
 
   def fetch_profile_picture_url(igsid)
-    uri = URI.parse("https://graph.facebook.com/#{GRAPH_API_VERSION}/#{igsid}?fields=profile_pic&access_token=#{CGI.escape(@access_token.to_s)}")
+    uri = URI.parse("https://graph.instagram.com/#{GRAPH_API_VERSION}/#{igsid}?fields=profile_pic&access_token=#{CGI.escape(@access_token.to_s)}")
     response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: true, open_timeout: 5, read_timeout: 10) { |h| h.get(uri) }
     return nil unless response.is_a?(Net::HTTPSuccess)
 
@@ -104,7 +104,7 @@ class InstagramMessagingService
   end
 
   def post_to_graph(body)
-    uri = URI.parse("https://graph.facebook.com/#{GRAPH_API_VERSION}/#{@ig_user_id}/messages")
+    uri = URI.parse("https://graph.instagram.com/#{GRAPH_API_VERSION}/#{@ig_user_id}/messages")
     request = Net::HTTP::Post.new(uri)
     request.content_type = 'application/json'
     request['Authorization'] = "Bearer #{@access_token}"
