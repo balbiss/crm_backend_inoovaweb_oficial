@@ -15,6 +15,7 @@ class AccountsController < ApplicationController
       asaas_configured:    account.asaas_api_key.present?,
       asaas_api_key:       mask_key(account.asaas_api_key),
       asaas_sandbox:       account.asaas_sandbox?,
+      facebook_page_name:  account.facebook_page_name,
       webhook_urls: {
         canal_pro: "#{api_host}/webhooks/canal_pro/#{account.portal_token}",
         zap:       "#{api_host}/webhooks/zap/#{account.portal_token}",

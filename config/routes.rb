@@ -83,8 +83,11 @@ Rails.application.routes.draw do
     end
   end
 
-  get 'instagram_oauth/authorize_url', to: 'instagram_oauth#authorize_url'
-  get 'instagram_oauth/callback',      to: 'instagram_oauth#callback'
+  get  'instagram_oauth/authorize_url',      to: 'instagram_oauth#authorize_url'
+  get  'instagram_oauth/callback',           to: 'instagram_oauth#callback'
+  get  'facebook_leads_oauth/authorize_url', to: 'facebook_leads_oauth#authorize_url'
+  get  'facebook_leads_oauth/callback',      to: 'facebook_leads_oauth#callback'
+  post 'facebook_leads_oauth/disconnect',    to: 'facebook_leads_oauth#disconnect'
 
   namespace :webhooks do
     post 'baileys',              to: 'baileys#create'
@@ -94,6 +97,8 @@ Rails.application.routes.draw do
     post 'viva_real/:token',     to: 'canal_pro#create', defaults: { source_portal: 'viva_real' }
     get  'instagram',            to: 'instagram#verify'
     post 'instagram',            to: 'instagram#create'
+    get  'facebook_leads',       to: 'facebook_leads#verify'
+    post 'facebook_leads',       to: 'facebook_leads#create'
   end
 
   namespace :admin do

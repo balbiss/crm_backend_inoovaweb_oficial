@@ -143,6 +143,8 @@ services:
       - INSTAGRAM_APP_ID=
       - INSTAGRAM_APP_SECRET=
       - INSTAGRAM_WEBHOOK_VERIFY_TOKEN=
+      - FACEBOOK_APP_ID=
+      - FACEBOOK_APP_SECRET=
     volumes:
       - staging_rails_storage:/rails/storage
     networks:
