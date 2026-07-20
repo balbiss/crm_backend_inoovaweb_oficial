@@ -337,12 +337,21 @@ class AiAssistantService
 
     case name
     when "search_properties"
+      # Busca por nome via palavra-chave em vez de frase exata: mesmo raciocínio
+      # do send_property_photos (a IA raramente repete o nome cadastrado ao pé
+      # da letra, então bater a frase inteira falhava na maioria das vezes).
+      name_words = args['name'].present? ? args['name'].to_s.split(/\s+/).reject { |w| w.length <= 2 } : []
+
       # Busca em Imóveis Avulsos (Properties) — apenas disponíveis
       prop_query = Property.where(account_id: account_id, status: 'Disponível')
       prop_query = prop_query.where("neighborhood ILIKE ?", "%#{args['neighborhood']}%") if args['neighborhood'].present?
       prop_query = prop_query.where("bedrooms >= ?", args['bedrooms']) if args['bedrooms'].present?
       prop_query = prop_query.where("price <= ?", args['max_price']) if args['max_price'].present?
-      prop_query = prop_query.where("title ILIKE :q OR condo_name ILIKE :q", q: "%#{args['name']}%") if args['name'].present?
+      if name_words.any?
+        prop_conditions = name_words.map { '(title ILIKE ? OR condo_name ILIKE ?)' }.join(' OR ')
+        prop_values = name_words.flat_map { |w| ["%#{w}%", "%#{w}%"] }
+        prop_query = prop_query.where(prop_conditions, *prop_values)
+      end
       prop_results = prop_query.limit(3)
       prop_results.each { |p| p.increment!(:search_count) rescue nil }
 
@@ -350,7 +359,11 @@ class AiAssistantService
       condo_query = Condominium.where(account_id: account_id).where.not(status: 'Esgotado')
       condo_query = condo_query.where("neighborhood ILIKE ?", "%#{args['neighborhood']}%") if args['neighborhood'].present?
       condo_query = condo_query.where("min_price <= ?", args['max_price']) if args['max_price'].present?
-      condo_query = condo_query.where("name ILIKE ?", "%#{args['name']}%") if args['name'].present?
+      if name_words.any?
+        condo_conditions = name_words.map { 'name ILIKE ?' }.join(' OR ')
+        condo_values = name_words.map { |w| "%#{w}%" }
+        condo_query = condo_query.where(condo_conditions, *condo_values)
+      end
       condo_results = condo_query.limit(3)
 
       if prop_results.empty? && condo_results.empty?
