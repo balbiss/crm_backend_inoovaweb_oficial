@@ -16,9 +16,11 @@ class AiFollowupJob < ApplicationJob
     max_attempts = inbox.followup_max_attempts || 3
     threshold_time = wait_time.minutes.ago
 
-    # Encontra conversas abertas e associadas àquele inbox
-    # E onde a última atividade foi antes do limite de espera
-    inbox.conversations.where(status: :open).where("last_activity_at < ?", threshold_time).find_each do |conversation|
+    # Encontra conversas abertas, ainda não atribuídas a um corretor (user_id
+    # nil) e associadas àquele inbox, onde a última atividade foi antes do
+    # limite de espera. Uma vez transferida pra um corretor, o resgate
+    # automático deixa de fazer sentido -- vira responsabilidade humana.
+    inbox.conversations.where(status: :open, user_id: nil).where("last_activity_at < ?", threshold_time).find_each do |conversation|
       
       # Se a última mensagem foi do lead, o bot q demorou pra responder, não é caso de follow-up.
       # Só damos follow-up quando nós (User/Bot) falamos por último e o lead deixou no vácuo.
