@@ -97,10 +97,23 @@ class AiAssistantService
 
   def build_message_history
     recent_messages = @conversation.messages.order(created_at: :asc).last(100)
-    
+
     recent_messages.map do |msg|
       role = msg.sender_type == 'Contact' ? 'user' : 'assistant'
-      { role: role, content: msg.text || "📎 [Mídia/Anexo]" }
+
+      # Foto/print mandado pelo lead: manda pro modelo como imagem de verdade
+      # (gpt-4o já enxerga imagem) em vez do placeholder "📎 [Mídia/Anexo]" --
+      # só faz sentido pro lado do usuário, a OpenAI não aceita image_url em
+      # mensagens do assistant.
+      if role == 'user' && msg.attachment.attached? && msg.attachment.content_type.to_s.start_with?('image/')
+        image_url = Rails.application.routes.url_helpers.rails_blob_url(msg.attachment, host: ENV['API_HOST'] || 'http://localhost:3000')
+        content = []
+        content << { type: 'text', text: msg.text } if msg.text.present?
+        content << { type: 'image_url', image_url: { url: image_url } }
+        { role: role, content: content }
+      else
+        { role: role, content: msg.text || "📎 [Mídia/Anexo]" }
+      end
     end
   end
 
