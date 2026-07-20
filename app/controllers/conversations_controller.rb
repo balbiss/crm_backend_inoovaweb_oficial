@@ -7,11 +7,12 @@ class ConversationsController < ApplicationController
 
     base = current_user.account.conversations
 
-    # Corretores (atendente) só veem conversas atribuídas a eles
+    # Corretores (atendente) só veem conversas atribuídas a eles (ou à sua
+    # equipe, se for gerente — ver User#team_scope_ids).
     # Não mostrar não-atribuídas: evita que fujam da fila do rodízio
     # Exceção: quem tem permissions['admin'] (Acesso Administrativo Total) vê tudo
     if current_user.atendente? && !current_user.has_permission?('admin')
-      base = base.where(user_id: current_user.id)
+      base = base.where(user_id: current_user.team_scope_ids)
     end
 
     conversations = base

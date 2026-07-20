@@ -34,4 +34,20 @@ class User < ApplicationRecord
   def has_permission?(key)
     permissions.present? && permissions[key.to_s] == true
   end
+
+  # Gerente: vê os dados (conversas/contatos/imóveis/agendamentos) de toda a
+  # sua equipe (mesmo round_robin_group), não só os próprios. Não participa
+  # do rodízio (RoundRobinAssignmentService filtra por department: 'corretor').
+  def team_manager?
+    department == 'gerente'
+  end
+
+  # IDs de usuário a considerar num filtro "user_id IN (...)": a própria
+  # equipe (mesmo grupo de rodízio) se for gerente com grupo definido,
+  # senão só o próprio usuário.
+  def team_scope_ids
+    return [id] unless team_manager? && round_robin_group_id.present?
+
+    account.users.where(round_robin_group_id: round_robin_group_id).pluck(:id)
+  end
 end

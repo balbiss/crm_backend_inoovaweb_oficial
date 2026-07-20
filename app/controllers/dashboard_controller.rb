@@ -2,22 +2,23 @@ class DashboardController < ApplicationController
   def index
     is_owner   = current_user.empresa? || current_user.admin? || current_user.has_permission?('view_all_contacts') || current_user.has_permission?('admin')
     account    = current_user.account
-    uid        = current_user.id
+    uids       = current_user.team_scope_ids
     today      = Date.current
 
     # Scopes filtrados por papel
     # Corretor: contatos derivados das conversas atribuídas a ele (não user_id do contato)
+    # Gerente: mesma lógica, mas `uids` já cobre toda a equipe (ver User#team_scope_ids)
     if is_owner
       contacts_scope = account.contacts
       conv_scope     = account.conversations
       appt_scope     = Appointment.where(account_id: account.id)
     else
-      my_contact_ids = account.conversations.where(user_id: uid).pluck(:contact_id).uniq
+      my_contact_ids = account.conversations.where(user_id: uids).pluck(:contact_id).uniq
       contacts_scope = account.contacts.where(id: my_contact_ids)
-      conv_scope     = account.conversations.where(user_id: uid)
-      # Agendamentos atribuídos ao corretor OU criados pela IA para seus contatos
+      conv_scope     = account.conversations.where(user_id: uids)
+      # Agendamentos atribuídos ao corretor/equipe OU criados pela IA para seus contatos
       appt_scope     = Appointment.where(account_id: account.id)
-                                  .where('user_id = ? OR (user_id IS NULL AND contact_id IN (?))', uid, my_contact_ids.presence || [0])
+                                  .where('user_id IN (?) OR (user_id IS NULL AND contact_id IN (?))', uids, my_contact_ids.presence || [0])
     end
 
     # Batch contacts: 3 GROUP BY queries instead of 9 individual COUNTs
@@ -61,7 +62,7 @@ class DashboardController < ApplicationController
     # Leads atribuídos hoje — conversas novas atribuídas a este usuário (ou a qualquer um, se dono)
     today_conv_scope = is_owner \
       ? account.conversations.where(created_at: today.beginning_of_day..today.end_of_day) \
-      : account.conversations.where(user_id: uid, created_at: today.beginning_of_day..today.end_of_day)
+      : account.conversations.where(user_id: uids, created_at: today.beginning_of_day..today.end_of_day)
 
     today_assigned_leads = today_conv_scope
       .includes(:contact)
@@ -77,7 +78,7 @@ class DashboardController < ApplicationController
           temperature:     c.temperature,
           kanban_status:   c.status,
           intention:       c.intention&.truncate(80),
-          assigned_to:     conv.user_id == uid ? nil : account.users.find_by(id: conv.user_id)&.first_name,
+          assigned_to:     conv.user_id == current_user.id ? nil : account.users.find_by(id: conv.user_id)&.first_name,
           created_at:      conv.created_at
         }
       end.compact

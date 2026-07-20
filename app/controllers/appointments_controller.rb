@@ -82,7 +82,7 @@ class AppointmentsController < ApplicationController
     scope = Appointment.includes(:contact, :property, :condominium).where(account_id: account_id)
 
     unless owner? || current_user.has_permission?('view_all_appointments')
-      scope = scope.where(user_id: [current_user.id, nil])
+      scope = scope.where(user_id: current_user.team_scope_ids + [nil])
     end
 
     render json: scope.as_json(include: {
