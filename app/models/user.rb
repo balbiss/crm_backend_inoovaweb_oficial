@@ -35,9 +35,19 @@ class User < ApplicationRecord
     permissions.present? && permissions[key.to_s] == true
   end
 
+  # Acesso irrestrito de verdade (dono/admin da conta). Precisa ser checado
+  # ANTES de team_manager? em qualquer scoping — sempre vence.
+  def full_account_access?
+    empresa? || admin? || has_permission?('admin')
+  end
+
   # Gerente: vê os dados (conversas/contatos/imóveis/agendamentos) de toda a
   # sua equipe (mesmo round_robin_group), não só os próprios. Não participa
   # do rodízio (RoundRobinAssignmentService filtra por department: 'corretor').
+  # Importante: isso precisa ser checado ANTES das permissions view_all_* em
+  # qualquer controller — senão um gerente com uma dessas marcadas (comum,
+  # pois o formulário de agente já vem com elas true por padrão) acaba
+  # enxergando a conta inteira em vez de só a própria equipe.
   def team_manager?
     department == 'gerente'
   end

@@ -4,10 +4,14 @@ class PropertiesController < ApplicationController
   # GET /properties
   def index
     base = current_user.account.properties.with_attached_photos
-    @properties = if current_user.role == 'admin' || current_user.role == 'empresa' || current_user.permissions&.dig('view_all_properties') || current_user.has_permission?('admin')
+    @properties = if current_user.full_account_access?
+      base
+    elsif current_user.team_manager?
+      base.where(user_id: current_user.team_scope_ids)
+    elsif current_user.permissions&.dig('view_all_properties')
       base
     else
-      base.where(user_id: current_user.team_scope_ids)
+      base.where(user_id: current_user.id)
     end
     render json: @properties.as_json(methods: [:photo_urls])
   end

@@ -4,10 +4,14 @@ class ContactsController < ApplicationController
   # GET /contacts
   def index
     base = current_user.account.contacts
-    @contacts = if current_user.role == 'admin' || current_user.role == 'empresa' || current_user.permissions&.dig('view_all_contacts') || current_user.has_permission?('admin')
+    @contacts = if current_user.full_account_access?
+      base
+    elsif current_user.team_manager?
+      base.where(user_id: current_user.team_scope_ids)
+    elsif current_user.permissions&.dig('view_all_contacts')
       base
     else
-      base.where(user_id: current_user.team_scope_ids)
+      base.where(user_id: current_user.id)
     end
 
     page     = (params[:page] || 1).to_i

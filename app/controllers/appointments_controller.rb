@@ -81,7 +81,7 @@ class AppointmentsController < ApplicationController
     account_id = current_user.account_id
     scope = Appointment.includes(:contact, :property, :condominium).where(account_id: account_id)
 
-    unless owner? || current_user.has_permission?('view_all_appointments')
+    unless owner? || (current_user.has_permission?('view_all_appointments') && !current_user.team_manager?)
       scope = scope.where(user_id: current_user.team_scope_ids + [nil])
     end
 
