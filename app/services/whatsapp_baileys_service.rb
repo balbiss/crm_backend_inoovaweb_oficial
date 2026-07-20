@@ -191,6 +191,24 @@ class WhatsappBaileysService
     Rails.cache.read("inbox:#{@inbox.id}:qr_code")
   end
 
+  # Uma única tentativa de baixar a mídia de uma mensagem (source_id). Quem
+  # chama decide a estratégia de retry -- ver RetryMediaDownloadJob, usado
+  # quando as tentativas imediatas do webhook falham (Baileys reconectando).
+  def fetch_media(source_id)
+    uri = URI.parse("#{@api_url}/media/#{source_id}")
+    request = Net::HTTP::Get.new(uri)
+    request["x-api-key"] = @api_key
+
+    response = Net::HTTP.start(uri.hostname, uri.port, use_ssl: uri.scheme == 'https') do |http|
+      http.request(request)
+    end
+
+    response.is_a?(Net::HTTPSuccess) ? response.body : nil
+  rescue => e
+    Rails.logger.error("Baileys fetch_media error (source_id=#{source_id}): #{e.message}")
+    nil
+  end
+
   def connected?
     # Cache tem prioridade (escrito pelo webhook connection.update)
     cached = Rails.cache.read("inbox:#{@inbox.id}:status")

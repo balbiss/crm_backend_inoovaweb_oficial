@@ -292,6 +292,11 @@ module Webhooks
             message_record.update(text: '📎 Anexo recebido') if message_record.text.blank?
           else
             message_record.update(text: '📎 Arquivo não pôde ser baixado') if message_record.text.blank?
+            # As 3 tentativas acima (0s/2s/4s) não cobrem instabilidades mais
+            # longas do Baileys (minutos, não segundos) -- continua tentando
+            # em background bem mais espaçado antes de desistir de vez.
+            RetryMediaDownloadJob.set(wait: RetryMediaDownloadJob::DELAYS.first)
+                                  .perform_later(message_record.id, source_id, inbox.id, filename, mimetype)
           end
         elsif message_record.text.blank?
           # Fallback se não tiver texto nem mídia
