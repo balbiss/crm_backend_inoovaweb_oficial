@@ -12,6 +12,8 @@ class Users::SessionsController < Devise::SessionsController
         first_name: resource.first_name,
         last_name: resource.last_name,
         role: resource.role,
+        department: resource.department,
+        round_robin_group_id: resource.round_robin_group_id,
         account_id: resource.account_id,
         account_name: resource.account&.name,
         permissions: resource.permissions

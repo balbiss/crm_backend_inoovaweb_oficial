@@ -23,4 +23,11 @@ class ApplicationController < ActionController::API
   def owner?
     current_user&.empresa? || current_user&.admin? || current_user&.has_permission?('admin')
   end
+
+  # Dono ou gerente de equipe (que fica restrito à própria equipe dentro de
+  # cada action -- ver require_same_team! no AgentsController).
+  def require_owner_or_team_manager!
+    return if owner? || current_user&.team_manager?
+    render json: { error: 'forbidden', message: 'Acesso restrito ao administrador ou gerente da equipe.' }, status: :forbidden
+  end
 end

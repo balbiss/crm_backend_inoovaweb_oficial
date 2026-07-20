@@ -1,8 +1,12 @@
 class AgentsController < ApplicationController
   before_action :set_agent, only: %i[ show update destroy block unblock toggle_roundrobin ]
   # Leitura liberada para todos (corretores precisam ver a equipe para atribuição).
-  # Escrita restrita ao dono: criar, editar, remover, bloquear, configurar rodízio.
-  before_action :require_owner!, only: %i[ create update destroy block unblock toggle_roundrobin ]
+  # Escrita liberada pro dono (sem restrição). Gerente também pode criar/editar/
+  # bloquear/(des)ativar no rodízio -- mas só corretores da própria equipe, e
+  # exclusão permanente continua exclusiva do dono (require_owner!).
+  before_action :require_owner!, only: %i[ destroy ]
+  before_action :require_owner_or_team_manager!, only: %i[ create update block unblock toggle_roundrobin ]
+  before_action :require_same_team!, only: %i[ update block unblock toggle_roundrobin ], unless: :owner?
 
   # GET /agents
   def index
@@ -26,6 +30,18 @@ class AgentsController < ApplicationController
     account = current_user&.account || Account.first
     @agent = account.users.build(agent_params)
     @agent.role = :atendente # Default role
+
+    # Gerente só cadastra corretor pra própria equipe -- ignora department/
+    # grupo/permissões que vierem no payload e força os valores certos.
+    unless owner?
+      if current_user.round_robin_group_id.blank?
+        return render json: { error: 'sem_equipe', message: 'Você precisa estar vinculado a uma equipe (grupo de rodízio) para cadastrar corretores.' }, status: :unprocessable_entity
+      end
+      @agent.department = 'corretor'
+      @agent.round_robin_group_id = current_user.round_robin_group_id
+      @agent.permissions = {}
+    end
+
     plain_password = agent_params[:password]
 
     if @agent.save
@@ -41,6 +57,14 @@ class AgentsController < ApplicationController
     prms = agent_params
     # If password is blank, don't update it
     prms.delete(:password) if prms[:password].blank?
+
+    # Gerente não pode mover o corretor pra outra equipe, promovê-lo a
+    # gerente/admin nem conceder permissões especiais.
+    unless owner?
+      prms[:department] = 'corretor'
+      prms[:round_robin_group_id] = current_user.round_robin_group_id
+      prms.delete(:permissions)
+    end
 
     if @agent.update(prms)
       render json: @agent.as_json(except: [:encrypted_password, :jti])
@@ -103,6 +127,17 @@ class AgentsController < ApplicationController
     def set_agent
       account = current_user&.account || Account.first
       @agent = account.users.find(params[:id])
+    end
+
+    # Gerente só pode gerenciar corretores da própria equipe -- nunca outro
+    # gerente/admin, nem corretor de outra equipe.
+    def require_same_team!
+      same_team = @agent.department == 'corretor' &&
+                  @agent.round_robin_group_id.present? &&
+                  @agent.round_robin_group_id == current_user.round_robin_group_id
+      return if same_team
+
+      render json: { error: 'forbidden', message: 'Você só pode gerenciar corretores da sua própria equipe.' }, status: :forbidden
     end
 
     def agent_params

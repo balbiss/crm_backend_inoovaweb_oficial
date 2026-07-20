@@ -1,5 +1,8 @@
 class RoundRobinGroupsController < ApplicationController
-  before_action :require_owner!
+  # Leitura liberada pro gerente também (precisa ver o nome da própria equipe
+  # na tela de Agentes). Criar/renomear/excluir grupo continua exclusivo do dono.
+  before_action :require_owner!, except: %i[ index ]
+  before_action :require_owner_or_team_manager!, only: %i[ index ]
   before_action :set_round_robin_group, only: %i[ update destroy ]
 
   # GET /round_robin_groups
