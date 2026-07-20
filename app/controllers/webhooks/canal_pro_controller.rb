@@ -161,7 +161,7 @@ module Webhooks
           name:        l[:nome]     || l[:name],
           email:       l[:email],
           phone:       l[:telefone] || l[:celular] || l[:fone] || fones,
-          message:     l[:mensagem] || l[:texto]   || l[:msg],
+          message:     strip_portal_boilerplate(l[:mensagem] || l[:texto] || l[:msg]),
           property:    p.dig(:anuncio, :titulo) || p.dig(:anuncio, :ref) || p.dig(:produto, :titulo),
           source:      p[:portal]   || p[:origem]  || source_portal.humanize,
           temperature: nil
@@ -180,12 +180,21 @@ module Webhooks
           name:        p[:nome]      || p[:name],
           email:       p[:email],
           phone:       raw_phone,
-          message:     p[:mensagem]  || p[:texto]  || p[:msg] || p[:message],
+          message:     strip_portal_boilerplate(p[:mensagem] || p[:texto] || p[:msg] || p[:message]),
           property:    property,
           source:      p[:leadOrigin] || p[:portal] || p[:origem] || source_portal.humanize,
           temperature: p[:temperature]
         }
       end
+    end
+
+    # O Grupo ZAP (OLX/ZAP Imóveis/Viva Real) cola um rodapé na mensagem do
+    # lead repetindo nome/e-mail/telefone (já capturados nos campos próprios)
+    # e um link de pesquisa de satisfação -- sem isso, a mensagem que aparece
+    # como se fosse do lead na tela fica poluída com lixo do portal.
+    def strip_portal_boilerplate(text)
+      return text if text.blank?
+      text.split(/A seguir,?\s*dados para contato/i).first.to_s.strip.presence || text
     end
 
     def combine_ddd_phone(ddd, phone)
