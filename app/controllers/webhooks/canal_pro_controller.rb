@@ -50,8 +50,15 @@ module Webhooks
       inbox = if forced_id
         Inbox.find_by(id: forced_id)
       elsif account_inbox_ids.any?
-        Inbox.where(id: account_inbox_ids, ai_enabled: true).first ||
-          Inbox.where(id: account_inbox_ids).first
+        # Conta pode ter mais de um número/inbox (ex: número antigo desativado
+        # e um novo em uso) -- sem checar conexão de verdade, sempre ganhava o
+        # de menor ID, que pode ser um inbox morto com prompt/persona antigos
+        # (achado testando de verdade: lead caindo num WhatsApp desconectado,
+        # com a IA respondendo com nome de uma marca antiga que nem existe
+        # mais pro cliente).
+        candidates = Inbox.where(id: account_inbox_ids, ai_enabled: true, provider: 'baileys')
+        connected_inbox = candidates.detect { |c| WhatsappBaileysService.new(c).connected? rescue false }
+        connected_inbox || candidates.first || Inbox.where(id: account_inbox_ids).first
       else
         Inbox.where(ai_enabled: true).first || Inbox.first
       end
