@@ -21,7 +21,12 @@ module CrmBackend
     # These settings can be overridden in specific environments using the files
     # in config/environments, which are processed later.
     #
-    # config.time_zone = "Central Time (US & Canada)"
+    # Nunca foi configurado -- Rails caía no default (UTC), então qualquer
+    # strftime/to_s sem passar por .iso8601 (ex: horário da lista de
+    # conversas) mostrava 3h adiantado em relação ao horário de Brasília.
+    # O banco continua salvando em UTC (Rails converte na leitura/escrita
+    # automaticamente); isso só afeta como o horário é exibido.
+    config.time_zone = "Brasilia"
     # config.eager_load_paths << Rails.root.join("extras")
 
     # Only loads a smaller set of middleware suitable for API only apps.
