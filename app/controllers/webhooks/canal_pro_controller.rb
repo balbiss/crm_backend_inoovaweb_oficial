@@ -38,34 +38,37 @@ module Webhooks
       contact.source = source_portal
       contact.save!
 
-      # Inboxes da conta: busca via conversas (mais confiável, owner nem sempre está em inbox_members)
-      via_conversations = account.conversations.pluck(:inbox_id).uniq.compact
-      via_members       = InboxMember.joins(:user)
-                                     .where(users: { account_id: account.id })
-                                     .pluck(:inbox_id).uniq
-      account_inbox_ids = (via_conversations + via_members).uniq
-
+      # Inboxes da conta: SEMPRE via inbox.account_id (FK direta, fonte da
+      # verdade). Um heurístico antigo aqui também considerava inboxes
+      # "vistos" via conversation.inbox_id/inbox_members -- isso deixava
+      # candidato um inbox de OUTRA conta sempre que existisse alguma
+      # conversa (histórica, migrada, testada) apontando pra ele por engano,
+      # o que já causou lead de uma imobiliária cair no WhatsApp de outra
+      # imobiliária completamente diferente (achado real: 10 conversas da
+      # Amil Imobiliária apontando pro inbox do Dmg Di Cavalcanti).
       setting_key = "#{source_portal}_inbox_id"
       forced_id   = GlobalSetting.fetch(setting_key).presence || GlobalSetting.fetch('canal_pro_inbox_id').presence
       inbox = if forced_id
-        Inbox.find_by(id: forced_id)
-      elsif account_inbox_ids.any?
-        # Conta pode ter mais de um número/inbox (ex: número antigo desativado
-        # e um novo em uso) -- sem checar conexão de verdade, sempre ganhava o
-        # de menor ID, que pode ser um inbox morto com prompt/persona antigos
-        # (achado testando de verdade: lead caindo num WhatsApp desconectado,
-        # com a IA respondendo com nome de uma marca antiga que nem existe
-        # mais pro cliente).
-        candidates = Inbox.where(id: account_inbox_ids, ai_enabled: true, provider: 'baileys')
-        connected_inbox = candidates.detect { |c| WhatsappBaileysService.new(c).connected? rescue false }
-        # Nenhum candidato conectado agora (ex: número atual caiu
-        # momentaneamente) -- em vez de cair pro de menor id (que pode ser
-        # um número morto há meses, nunca mais vai reconectar), prefere o
-        # que esteve conectado mais recentemente de verdade.
-        most_recently_connected = candidates.max_by { |c| Rails.cache.read("inbox:#{c.id}:last_connected_at").to_i }
-        connected_inbox || most_recently_connected || candidates.first || Inbox.where(id: account_inbox_ids).first
+        Inbox.find_by(id: forced_id, account_id: account.id) || Inbox.find_by(id: forced_id)
       else
-        Inbox.where(ai_enabled: true).first || Inbox.first
+        candidates = account.inboxes.where(ai_enabled: true, provider: 'baileys')
+        if candidates.any?
+          # Conta pode ter mais de um número/inbox (ex: número antigo
+          # desativado e um novo em uso) -- sem checar conexão de verdade,
+          # sempre ganhava o de menor ID, que pode ser um inbox morto com
+          # prompt/persona antigos (achado testando de verdade: lead caindo
+          # num WhatsApp desconectado, com a IA respondendo com nome de uma
+          # marca antiga que nem existe mais pro cliente).
+          connected_inbox = candidates.detect { |c| WhatsappBaileysService.new(c).connected? rescue false }
+          # Nenhum candidato conectado agora (ex: número atual caiu
+          # momentaneamente) -- em vez de cair pro de menor id (que pode ser
+          # um número morto há meses, nunca mais vai reconectar), prefere o
+          # que esteve conectado mais recentemente de verdade.
+          most_recently_connected = candidates.max_by { |c| Rails.cache.read("inbox:#{c.id}:last_connected_at").to_i }
+          connected_inbox || most_recently_connected || candidates.first
+        else
+          account.inboxes.first
+        end
       end
 
       unless inbox
