@@ -58,7 +58,12 @@ module Webhooks
         # mais pro cliente).
         candidates = Inbox.where(id: account_inbox_ids, ai_enabled: true, provider: 'baileys')
         connected_inbox = candidates.detect { |c| WhatsappBaileysService.new(c).connected? rescue false }
-        connected_inbox || candidates.first || Inbox.where(id: account_inbox_ids).first
+        # Nenhum candidato conectado agora (ex: número atual caiu
+        # momentaneamente) -- em vez de cair pro de menor id (que pode ser
+        # um número morto há meses, nunca mais vai reconectar), prefere o
+        # que esteve conectado mais recentemente de verdade.
+        most_recently_connected = candidates.max_by { |c| Rails.cache.read("inbox:#{c.id}:last_connected_at").to_i }
+        connected_inbox || most_recently_connected || candidates.first || Inbox.where(id: account_inbox_ids).first
       else
         Inbox.where(ai_enabled: true).first || Inbox.first
       end

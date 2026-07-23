@@ -47,6 +47,12 @@ module Webhooks
         # Limpa o QR do cache se conectado
         if connection_status == 'open'
           Rails.cache.delete("inbox:#{inbox.id}:qr_code")
+          # Guardado sem expiração curta -- usado como desempate quando
+          # nenhum inbox candidato está conectado no momento (ver
+          # Webhooks::CanalProController), pra preferir o número que
+          # realmente está em uso hoje em vez de um inbox morto há meses
+          # que por acaso tem o menor id.
+          Rails.cache.write("inbox:#{inbox.id}:last_connected_at", Time.current.to_i, expires_in: 1.year)
         end
       end
 
