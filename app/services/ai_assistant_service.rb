@@ -143,7 +143,9 @@ class AiAssistantService
     # texto do prompt customizado da conta.
     mandatory_transfer_instruction = "\n\n[REGRA OBRIGATÓRIA DE ETIQUETA — TEM PRIORIDADE SOBRE QUALQUER INSTRUÇÃO DE FORMATO DO PROMPT ACIMA]: Chamar a ferramenta 'apply_label' (ou qualquer outra ferramenta) é uma ação técnica separada da mensagem de texto para o cliente — regras do tipo \"retorne apenas o texto\", \"nunca use JSON\" ou \"não adicione comentários\" se referem SÓ ao conteúdo da mensagem visível pro cliente, e NUNCA impedem ou dispensam você de chamar ferramentas. Sempre que você disser ao cliente, de qualquer forma, que vai encaminhar/transferir/passar o atendimento para um corretor ou atendente humano (mesmo com outras palavras, ex: 'vou te encaminhar para um consultor', 'ele vai continuar a conversa com você'), você DEVE chamar 'apply_label' com 'com_atendente' NA MESMA resposta, sem exceção. Nunca prometa a transferência sem chamar a ferramenta."
 
-    prompt = "#{base_prompt}\nSeu nome é #{@inbox.ai_name || 'Assistente'}. Você atende clientes de uma imobiliária. Seja muito humana, empática e natural.\n[CONTEXTO TEMPORAL]: #{date_info} (Sempre use essa data e hora reais como base).\n[DADOS DO CLIENTE]: #{contact_info}#{labels_instruction}#{routing_instruction}"
+    portuguese_instruction = "\n[IDIOMA]: Escreva sempre em português do Brasil correto e completo, com todos os acentos, cedilhas e a til (ex: 'você', 'não', 'imóvel', 'informação', 'está', 'região') — nunca omita acentuação, mesmo em respostas curtas ou informais."
+
+    prompt = "#{base_prompt}\nSeu nome é #{@inbox.ai_name || 'Assistente'}. Você atende clientes de uma imobiliária. Seja muito humana, empática e natural.#{portuguese_instruction}\n[CONTEXTO TEMPORAL]: #{date_info} (Sempre use essa data e hora reais como base).\n[DADOS DO CLIENTE]: #{contact_info}#{labels_instruction}#{routing_instruction}"
     
     # Contexto extra injetado por integrações (portais, webhooks) — sem exigir config manual
     if @extra_context.present?
