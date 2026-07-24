@@ -370,6 +370,16 @@ module Webhooks
                   ai_service = AiAssistantService.new(inbox, conversation)
                   ai_response_text = ai_service.process_message
 
+                  # Rede de segurança: se o modelo voltar em branco bem na hora em
+                  # que a última mensagem do cliente foi um arquivo que falhou o
+                  # download, o lead ficava sem resposta nenhuma, silenciosamente
+                  # (achado real, conta Amil, conversa #1640). Garante que sempre
+                  # sai algo, mesmo que a instrução de prompt falhe.
+                  if ai_response_text.blank? && conversation.messages.order(created_at: :desc).first&.text.to_s.start_with?('📎')
+                    Rails.logger.warn("IA voltou em branco após arquivo não baixado, usando resposta padrão -- conversa #{conversation.id}")
+                    ai_response_text = "Desculpe, não consegui abrir o arquivo que você enviou. Pode tentar reenviar ou me contar em texto o que você precisa?"
+                  end
+
                   if ai_response_text.present?
                     # Avisamos ao sistema que a IA está respondendo para não dar trigger no fromMe
                     Rails.cache.write("ai_is_replying_#{inbox.id}_#{remote_jid}", true, expires_in: 60.seconds)

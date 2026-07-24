@@ -145,7 +145,15 @@ class AiAssistantService
 
     portuguese_instruction = "\n[IDIOMA]: Escreva sempre em português do Brasil correto e completo, com todos os acentos, cedilhas e a til (ex: 'você', 'não', 'imóvel', 'informação', 'está', 'região') — nunca omita acentuação, mesmo em respostas curtas ou informais."
 
-    prompt = "#{base_prompt}\nSeu nome é #{@inbox.ai_name || 'Assistente'}. Você atende clientes de uma imobiliária. Seja muito humana, empática e natural.#{portuguese_instruction}\n[CONTEXTO TEMPORAL]: #{date_info} (Sempre use essa data e hora reais como base).\n[DADOS DO CLIENTE]: #{contact_info}#{labels_instruction}#{routing_instruction}"
+    # Sem isso, o modelo recebia esses placeholders como se fossem texto real
+    # digitado pelo cliente e, sem saber o que fazer com uma frase sem sentido
+    # nenhuma, às vezes simplesmente não gerava resposta nenhuma -- o lead
+    # ficava sem retorno algum, silenciosamente (achado real: conversa #1640,
+    # conta Amil, lead nunca recebeu resposta depois de mandar uma mídia que
+    # falhou o download).
+    media_failure_instruction = "\n[MENSAGEM NÃO RECEBIDA]: Se a mensagem mais recente do cliente for '📎 Arquivo não pôde ser baixado', '📎 [Mídia/Anexo]' ou '📎 Anexo recebido' sem nenhum texto, significa que ele te mandou uma foto, áudio, vídeo ou documento que o sistema não conseguiu processar — você NUNCA viu o conteúdo real desse arquivo. Nunca invente, finja ter visto ou presuma o que continha. Você DEVE responder normalmente (nunca fique em silêncio): peça desculpas de forma natural pela falha técnica e peça para o cliente reenviar o arquivo ou descrever em texto o que ele precisa."
+
+    prompt = "#{base_prompt}\nSeu nome é #{@inbox.ai_name || 'Assistente'}. Você atende clientes de uma imobiliária. Seja muito humana, empática e natural.#{portuguese_instruction}#{media_failure_instruction}\n[CONTEXTO TEMPORAL]: #{date_info} (Sempre use essa data e hora reais como base).\n[DADOS DO CLIENTE]: #{contact_info}#{labels_instruction}#{routing_instruction}"
     
     # Contexto extra injetado por integrações (portais, webhooks) — sem exigir config manual
     if @extra_context.present?
