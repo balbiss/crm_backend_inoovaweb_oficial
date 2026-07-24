@@ -7,7 +7,7 @@ class RetryMediaDownloadJob < ApplicationJob
   # segundos), essas tentativas continuam em background bem mais espaçadas.
   DELAYS = [30.seconds, 2.minutes, 5.minutes, 10.minutes].freeze
 
-  def perform(message_id, source_id, inbox_id, filename, mimetype, attempt = 1)
+  def perform(message_id, source_id, inbox_id, filename, mimetype, caption = nil, attempt = 1)
     message_record = Message.find_by(id: message_id)
     return if message_record.nil? || message_record.attachment.attached?
 
@@ -22,7 +22,13 @@ class RetryMediaDownloadJob < ApplicationJob
         filename: filename,
         content_type: mimetype
       )
-      message_record.update(text: '📎 Anexo recebido') if message_record.text == '📎 Arquivo não pôde ser baixado'
+      # Texto pode estar em branco (1ª tentativa) ou com o placeholder de
+      # falha (tentativas seguintes, possivelmente já com a legenda do
+      # cliente embutida) -- nos dois casos, troca pela legenda de verdade
+      # (se tiver) agora que o arquivo baixou.
+      if message_record.text.blank? || message_record.text.to_s.start_with?('📎 Arquivo não pôde ser baixado')
+        message_record.update(text: caption.presence || '📎 Anexo recebido')
+      end
 
       if mimetype.start_with?('audio/') && inbox.ai_enabled
         begin
@@ -33,7 +39,7 @@ class RetryMediaDownloadJob < ApplicationJob
         end
       end
     elsif attempt < DELAYS.size
-      RetryMediaDownloadJob.set(wait: DELAYS[attempt]).perform_later(message_id, source_id, inbox_id, filename, mimetype, attempt + 1)
+      RetryMediaDownloadJob.set(wait: DELAYS[attempt]).perform_later(message_id, source_id, inbox_id, filename, mimetype, caption, attempt + 1)
     end
   end
 end

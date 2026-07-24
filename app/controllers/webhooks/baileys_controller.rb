@@ -243,10 +243,18 @@ module Webhooks
         if media_type_key
           media_info = msg_obj[media_type_key]
           mimetype = media_info[:mimetype] || media_info['mimetype'] || 'application/octet-stream'
-          
+
           extension = mimetype.split('/').last&.split(';')&.first || 'bin'
           filename = "#{source_id}.#{extension}"
-          
+
+          # A legenda (caption) vem no metadado da própria mensagem, junto com
+          # o envelope -- não depende de baixar o arquivo em si. Extrai ANTES
+          # do download pra não se perder quando o download falha (achado
+          # real: lead mandava foto com legenda tipo "aqui está a planta" e a
+          # legenda sumia, só aparecia o "Arquivo não pôde ser baixado" seco,
+          # sem contexto nenhum do que o lead realmente disse).
+          caption = media_info[:caption] || media_info['caption']
+
           decoded_media = nil
           if media_data.present?
             require 'base64'
@@ -282,8 +290,7 @@ module Webhooks
               filename: filename,
               content_type: mimetype
             )
-            
-            caption = media_info[:caption] || media_info['caption']
+
             message_record.update(text: caption) if caption.present? && message_record.text.blank?
 
             if mimetype.start_with?('audio/') && inbox.ai_enabled
@@ -297,12 +304,13 @@ module Webhooks
 
             message_record.update(text: '📎 Anexo recebido') if message_record.text.blank?
           else
-            message_record.update(text: '📎 Arquivo não pôde ser baixado') if message_record.text.blank?
+            failure_text = caption.present? ? "📎 Arquivo não pôde ser baixado — o cliente escreveu: \"#{caption}\"" : '📎 Arquivo não pôde ser baixado'
+            message_record.update(text: failure_text) if message_record.text.blank?
             # As 3 tentativas acima (0s/2s/4s) não cobrem instabilidades mais
             # longas do Baileys (minutos, não segundos) -- continua tentando
             # em background bem mais espaçado antes de desistir de vez.
             RetryMediaDownloadJob.set(wait: RetryMediaDownloadJob::DELAYS.first)
-                                  .perform_later(message_record.id, source_id, inbox.id, filename, mimetype)
+                                  .perform_later(message_record.id, source_id, inbox.id, filename, mimetype, caption)
           end
         elsif message_record.text.blank?
           # Fallback se não tiver texto nem mídia
