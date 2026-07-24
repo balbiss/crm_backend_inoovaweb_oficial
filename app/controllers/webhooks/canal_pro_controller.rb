@@ -127,19 +127,30 @@ module Webhooks
 
       # IA via WhatsApp se tiver telefone, AI ativa e conversa nova
       if inbox.ai_enabled && phone.present? && is_new
-        jid = "#{phone.gsub(/\D/, '')}@s.whatsapp.net"
-        contact.update_column(:jid, jid) if contact.jid.blank?
+        raw_jid = "#{phone.gsub(/\D/, '')}@s.whatsapp.net"
+        contact.update_column(:jid, raw_jid) if contact.jid.blank?
 
         Thread.new do
           begin
             sleep 3
+            baileys_service = WhatsappBaileysService.new(inbox)
+            # resolve_jid testa os dois formatos do nono dígito brasileiro contra o
+            # WhatsApp de verdade (via /on-whatsapp) -- sem isso, o envio usava o jid
+            # "cru" montado só com os dígitos do telefone, que pode não bater com o
+            # número real registrado. O Baileys aceita o envio normalmente (devolve um
+            # id válido, a mensagem aparece como enviada no CRM) mas ela nunca chega no
+            # WhatsApp de verdade do lead -- mesma classe de bug já resolvida em
+            # AgentNotificationService, só que essa aqui nunca tinha sido migrada.
+            jid = baileys_service.resolve_jid(phone) || raw_jid
+            contact.update_column(:jid, jid) if contact.jid != jid
+
             ai_service = AiAssistantService.new(inbox, conversation, extra_context: build_portal_context(lead, source_portal))
             ai_response = ai_service.process_message
             if ai_response.present?
               Rails.cache.write("ai_is_replying_#{inbox.id}_#{jid}", true, expires_in: 60.seconds)
               paragraphs = ai_response.is_a?(Array) ? ai_response : ai_response.split("\n\n").reject(&:blank?)
               paragraphs.each do |para|
-                baileys_id = WhatsappBaileysService.new(inbox).send_message(jid, para.strip)
+                baileys_id = send_message_with_retry(baileys_service, jid, para.strip)
                 Message.create!(
                   account:      account,
                   conversation: conversation,
@@ -147,7 +158,7 @@ module Webhooks
                   sender_type:  'User',
                   sender_id:    nil,
                   source_id:    baileys_id.presence || "ai_#{SecureRandom.hex(8)}",
-                  status:       :delivered
+                  status:       baileys_id.present? ? :delivered : :failed
                 )
               end
             end
@@ -233,6 +244,26 @@ module Webhooks
       parts << "Temperatura indicada pelo portal: #{lead[:temperature]}." if lead[:temperature].present?
       parts << "INSTRUÇÃO: Esta é a primeira mensagem. Se apresente como assistente da imobiliária pelo nome, mencione o imóvel que ele perguntou e pergunte se deseja mais informações ou quer agendar uma visita."
       parts.join(" ")
+    end
+
+    # Retry curto pra cobrir instabilidade conhecida da conexão Baileys (stream
+    # errors 503/515, reconexão automática do protocolo multi-device -- mesma
+    # causa raiz já documentada no retry de download de mídia). O Baileys pode
+    # aceitar o envio e devolver um id válido mesmo se a mensagem se perder no
+    # meio da reconexão, então isso não cobre 100% dos casos -- só reduz a
+    # janela de perda em falhas de HTTP diretas (timeout, 5xx da API).
+    def send_message_with_retry(baileys_service, jid, text)
+      [0, 5, 15].each do |wait_seconds|
+        sleep wait_seconds if wait_seconds.positive?
+        begin
+          baileys_id = baileys_service.send_message(jid, text)
+          return baileys_id if baileys_id.present?
+        rescue => e
+          Rails.logger.warn("send_message_with_retry: tentativa falhou (#{e.message})")
+        end
+      end
+      Rails.logger.error("send_message_with_retry: desistiu após 3 tentativas, jid=#{jid}")
+      nil
     end
 
     def build_lead_note(lead)

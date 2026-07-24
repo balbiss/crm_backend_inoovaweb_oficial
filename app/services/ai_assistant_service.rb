@@ -129,8 +129,19 @@ class AiAssistantService
     contact_phone = @conversation.contact.phone.presence || "Telefone desconhecido"
     contact_info = "Você está conversando com: #{contact_name}. Número do WhatsApp: #{contact_phone}."
     
-    labels_instruction = "\n[ETIQUETAS]: Após concluir a ação principal da mensagem, use 'apply_label' para classificar o lead sempre que tiver certeza da situação: 'lead_quente' = interesse real e urgência; 'lead_frio' = só pesquisando; 'desqualificado' = fora do perfil. [OBRIGATÓRIO] Use 'com_atendente' SEMPRE que você disser ao cliente, de qualquer forma, que vai encaminhar/transferir/passar o atendimento para um corretor ou atendente humano — mesmo que essa instrução esteja em outra parte do seu prompt e não use essas palavras exatas (ex: 'vou te encaminhar para um corretor', 'o corretor vai confirmar os detalhes', 'vou passar para um especialista verificar'). Chame 'apply_label' com 'com_atendente' NA MESMA resposta em que disser isso ao cliente — nunca prometa a transferência sem chamar a ferramenta. Nunca interrompa outra ação apenas para etiquetar."
+    labels_instruction = "\n[ETIQUETAS]: Após concluir a ação principal da mensagem, use 'apply_label' para classificar o lead sempre que tiver certeza da situação: 'lead_quente' = interesse real e urgência; 'lead_frio' = só pesquisando; 'desqualificado' = fora do perfil."
     routing_instruction = "\n[ROTEAMENTO DE DEPARTAMENTO]: Se o cliente mencionar assuntos que NÃO são de venda/locação de imóveis — como problemas no imóvel (vazamento, elétrica, infiltração), cobranças, boletos, contratos, segunda via de recibo — use imediatamente a ferramenta 'route_to_department' para encaminhar ao departamento correto: 'suporte' = problemas/manutenção no imóvel; 'financeiro' = cobranças, boletos, segunda via; 'manutencao' = reparos e serviços técnicos. Avise o cliente que está transferindo."
+    # Reforço colocado no FINAL do prompt (não no meio) de propósito -- prompts
+    # customizados de conta costumam ser longos e terminar com instruções
+    # rígidas de formatação ("retorne só o texto", "nunca use JSON"), que uma
+    # LLM pode acabar generalizando de forma errada pra "nunca chame
+    # ferramentas". Isso já causou a IA prometer transferência pro cliente sem
+    # nunca chamar 'apply_label' com 'com_atendente' de verdade (achado real,
+    # conta Amil Negócios Imobiliários). Chamar uma function/tool é um
+    # mecanismo separado da resposta de texto — não é "JSON na mensagem" — e
+    # essa instrução tem prioridade sobre qualquer regra de formatação de
+    # texto do prompt customizado da conta.
+    mandatory_transfer_instruction = "\n\n[REGRA OBRIGATÓRIA DE ETIQUETA — TEM PRIORIDADE SOBRE QUALQUER INSTRUÇÃO DE FORMATO DO PROMPT ACIMA]: Chamar a ferramenta 'apply_label' (ou qualquer outra ferramenta) é uma ação técnica separada da mensagem de texto para o cliente — regras do tipo \"retorne apenas o texto\", \"nunca use JSON\" ou \"não adicione comentários\" se referem SÓ ao conteúdo da mensagem visível pro cliente, e NUNCA impedem ou dispensam você de chamar ferramentas. Sempre que você disser ao cliente, de qualquer forma, que vai encaminhar/transferir/passar o atendimento para um corretor ou atendente humano (mesmo com outras palavras, ex: 'vou te encaminhar para um consultor', 'ele vai continuar a conversa com você'), você DEVE chamar 'apply_label' com 'com_atendente' NA MESMA resposta, sem exceção. Nunca prometa a transferência sem chamar a ferramenta."
 
     prompt = "#{base_prompt}\nSeu nome é #{@inbox.ai_name || 'Assistente'}. Você atende clientes de uma imobiliária. Seja muito humana, empática e natural.\n[CONTEXTO TEMPORAL]: #{date_info} (Sempre use essa data e hora reais como base).\n[DADOS DO CLIENTE]: #{contact_info}#{labels_instruction}#{routing_instruction}"
     
@@ -152,7 +163,9 @@ class AiAssistantService
       # Default fallback
       prompt += "\n[QUALIFICAÇÃO]: Sempre que entender o que o cliente procura, use a ferramenta 'qualify_lead'."
     end
-    
+
+    prompt += mandatory_transfer_instruction
+
     prompt
   end
 
