@@ -191,7 +191,8 @@ class AiAssistantService
           type: "object",
           properties: {
             temperature: { type: "string", enum: ["Frio", "Morno", "Quente"], description: "Temperatura do lead (Frio = só pesquisando, Morno = interessado, Quente = quer comprar logo)." },
-            intention: { type: "string", description: "Descrição detalhada do que o cliente quer (ex: Busca apartamento de 2 quartos na Cidade Nova, até R$ 500 mil)." }
+            intention: { type: "string", description: "Descrição detalhada do que o cliente quer (ex: Busca apartamento de 2 quartos na Cidade Nova, até R$ 500 mil)." },
+            purpose: { type: "string", enum: ["compra", "locacao"], description: "Se o cliente busca comprar ou alugar um imóvel — preencha assim que ficar claro na conversa, mesmo que 'intention' ainda esteja incompleto. Usado pra transferir o lead pro corretor certo (equipe de vendas ou de locação)." }
           },
           required: ["temperature", "intention"]
         }
@@ -527,6 +528,9 @@ class AiAssistantService
 
     when "qualify_lead"
       contact.update!(temperature: args['temperature'], intention: args['intention'])
+      if args['purpose'].present?
+        contact.update!(custom_attributes: contact.custom_attributes.merge('purpose' => args['purpose']))
+      end
 
       # Auto-aplica etiqueta correspondente à temperatura
       temp_label_map = { 'Quente' => 'lead_quente', 'Frio' => 'lead_frio', 'Morno' => 'lead_morno' }

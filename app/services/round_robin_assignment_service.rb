@@ -8,7 +8,7 @@ class RoundRobinAssignmentService
 
     ApplicationRecord.transaction do
       account = conversation.account.lock!
-      group_id = conversation.inbox&.round_robin_group_id
+      group_id = conversation.inbox&.round_robin_group_id || group_id_from_purpose(account, conversation.contact)
 
       base_scope = User.where(account_id: account.id, status: 'active', department: 'corretor')
       base_scope = base_scope.where(round_robin_group_id: group_id) if group_id.present?
@@ -56,6 +56,23 @@ class RoundRobinAssignmentService
   end
 
   private
+
+  # Contas que atendem venda e locação pelo MESMO número de WhatsApp não
+  # conseguem separar as roletas só pelo inbox (um inbox só, duas equipes).
+  # Nesse caso, usa a intenção que a IA já captura via 'qualify_lead' (args
+  # 'purpose': compra/locacao) pra escolher o grupo certo -- resolvido por
+  # nome do grupo (contém "venda" ou "loca") em vez de id fixo, já que cada
+  # conta nomeia as roletas do seu jeito. Achado real: conta Amil Negócios
+  # Imobiliários, um WhatsApp só recebendo os dois tipos de lead, mas com
+  # roletas "VENDAS" e "LOCAÇÃO" separadas -- sem isso, o lead podia cair
+  # com um corretor de locação forçado a atender venda (ou vice-versa).
+  def self.group_id_from_purpose(account, contact)
+    purpose = contact&.custom_attributes&.dig('purpose')
+    return nil if purpose.blank?
+
+    pattern = purpose == 'locacao' ? /loca/i : /venda|compra/i
+    account.round_robin_groups.find { |g| g.name.to_s.match?(pattern) }&.id
+  end
 
   def self.broadcast_assignment(conversation, agent)
     ActionCable.server.broadcast("conversations_channel_#{conversation.account_id}", {
