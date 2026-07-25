@@ -31,6 +31,11 @@ module Webhooks
       else
         Contact.find_or_initialize_by(email: lead[:email], account_id: account.id)
       end
+      # Guarda ANTES de qualquer update -- se o contato já existia (de uma
+      # conversa anterior por qualquer canal), esse é o identificador real
+      # estabelecido de verdade pelo WhatsApp, que deve ter prioridade sobre
+      # o que a gente possa reconstruir a partir do telefone.
+      established_jid = contact.jid.presence
 
       contact.name   = lead[:name].presence || contact.name || phone || lead[:email]
       contact.email  = lead[:email].presence || contact.email
@@ -134,14 +139,23 @@ module Webhooks
           begin
             sleep 3
             baileys_service = WhatsappBaileysService.new(inbox)
-            # resolve_jid testa os dois formatos do nono dígito brasileiro contra o
-            # WhatsApp de verdade (via /on-whatsapp) -- sem isso, o envio usava o jid
-            # "cru" montado só com os dígitos do telefone, que pode não bater com o
-            # número real registrado. O Baileys aceita o envio normalmente (devolve um
-            # id válido, a mensagem aparece como enviada no CRM) mas ela nunca chega no
-            # WhatsApp de verdade do lead -- mesma classe de bug já resolvida em
-            # AgentNotificationService, só que essa aqui nunca tinha sido migrada.
-            jid = baileys_service.resolve_jid(phone) || raw_jid
+            # Se o contato já tinha um jid estabelecido de verdade (contato
+            # antigo, já teve conversa real por qualquer canal), usa ele --
+            # WhatsApp moderno pode identificar o mesmo número por um "@lid"
+            # (identidade de privacidade) diferente do jid "@s.whatsapp.net"
+            # baseado só no telefone. Mandar pro jid errado (mesmo que exista
+            # e passe no /on-whatsapp) faz a mensagem cair numa sessão/thread
+            # diferente da que o WhatsApp real do cliente já usa -- some do
+            # CRM da imobiliária conseguir ver no próprio celular (achado
+            # real: 33 contatos da conta Amil com @lid, resolve_jid sempre
+            # devolvia um jid diferente do estabelecido de verdade).
+            #
+            # Só pra contato genuinamente novo (sem jid nenhum ainda) que cai
+            # no resolve_jid: testa os dois formatos do nono dígito
+            # brasileiro contra o WhatsApp de verdade (via /on-whatsapp) --
+            # sem isso, o envio usava o jid "cru" montado só com os dígitos
+            # do telefone, que pode não bater com o número real registrado.
+            jid = established_jid || baileys_service.resolve_jid(phone) || raw_jid
             contact.update_column(:jid, jid) if contact.jid != jid
 
             ai_service = AiAssistantService.new(inbox, conversation, extra_context: build_portal_context(lead, source_portal))
