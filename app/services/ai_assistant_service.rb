@@ -322,7 +322,7 @@ class AiAssistantService
       choice = current_response.dig("choices", 0, "message")
 
       unless choice["tool_calls"]
-        return choice["content"]
+        return enforce_transfer_promise(choice["content"])
       end
 
       # Processa todos os tool_calls desta rodada — a IA às vezes chama a
@@ -365,7 +365,33 @@ class AiAssistantService
     end
 
     # Fallback: última resposta se atingiu o limite de rodadas
-    current_response.dig("choices", 0, "message", "content")
+    enforce_transfer_promise(current_response.dig("choices", 0, "message", "content"))
+  end
+
+  # Rede de segurança determinística contra a IA prometer a transferência em
+  # texto ("vou te encaminhar para um especialista") sem chamar 'apply_label'
+  # na mesma resposta — como 'tool_choice' é "auto", a chamada da ferramenta
+  # NUNCA é garantida só por instrução no prompt (já reforçamos isso antes,
+  # ver mandatory_transfer_instruction, e mesmo assim aconteceu de novo: conta
+  # Unike/Camila, conversa #1675, "Juuh Machado" — a IA disse "vou te
+  # encaminhar" e a conversa ficou 4 dias sem corretor nenhum). Se o texto
+  # final bate com uma promessa clara de transferência e a conversa ainda não
+  # foi encaminhada por nenhum caminho (nem 'com_atendente', nem
+  # 'route_to_department'), aplica 'com_atendente' de verdade — mesmo efeito
+  # de a IA ter chamado a ferramenta.
+  TRANSFER_INTENT_PATTERN = /vou\s+te\s+(encaminhar|direcionar|transferir|passar)|vou\s+(encaminhar|direcionar|transferir|passar)\s+(voc[eê]|sua)|vai\s+continuar\s+a\s+conversa\s+com\s+voc[eê]/i
+
+  def enforce_transfer_promise(text)
+    return text if text.blank?
+    return text unless text.match?(TRANSFER_INTENT_PATTERN)
+    return text if @conversation.reload.user_id.present? || @conversation.tags.exists?(name: 'com_atendente')
+
+    execute_tool('apply_label', {
+      'label'  => 'com_atendente',
+      'reason' => 'Transferência prometida no texto ao cliente, aplicada automaticamente (a IA não chamou a ferramenta nesta resposta).'
+    })
+
+    text
   end
 
   def execute_tool(name, args)
