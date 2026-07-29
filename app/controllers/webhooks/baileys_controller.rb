@@ -85,6 +85,24 @@ module Webhooks
         # Ignorar mensagens de grupos
         next if remote_jid.include?('@g.us')
 
+        # Eventos de "stub" do protocolo do WhatsApp (sem campo "message"
+        # nenhum, só messageStubType/messageStubParameters, ex: "Message
+        # absent from node") não são mensagens de verdade -- são placeholders
+        # que o Baileys manda quando o conteúdo real ainda não sincronizou
+        # (comum com addressingMode "lid"). O MESMO id chega de novo, segundos
+        # depois, já com o "message" de verdade preenchido.
+        # Achado real (contas 12/15/24, várias): sem esse filtro, o stub criava
+        # a Message primeiro com o texto genérico "Arquivo não suportado ou
+        # vazio" -- e quando o conteúdo de verdade chegava (mesmo source_id
+        # do stub), o dedup abaixo (Message.exists?(source_id:)) descartava
+        # SILENCIOSAMENTE a mensagem real do cliente. Resultado: cliente
+        # mandava só "Bom dia" e o sistema nunca guardava o texto real, só o
+        # erro -- em qualquer conta, não é ligado a nenhum canal específico.
+        if msg[:message].blank? && msg[:messageStubType].present?
+          Rails.logger.info("Ignorando stub do WhatsApp (messageStubType=#{msg[:messageStubType]}) pra #{remote_jid}, aguardando o conteúdo real chegar no mesmo id")
+          next
+        end
+
         # Tratamento de fromMe (Humano do nosso lado enviou mensagem)
         if msg.dig(:key, :fromMe)
           baileys_msg_id = msg.dig(:key, :id)
