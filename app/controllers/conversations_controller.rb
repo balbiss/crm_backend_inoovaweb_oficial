@@ -9,10 +9,18 @@ class ConversationsController < ApplicationController
 
     # Corretores (atendente) só veem conversas atribuídas a eles (ou à sua
     # equipe, se for gerente — ver User#team_scope_ids).
-    # Não mostrar não-atribuídas: evita que fujam da fila do rodízio
-    # Exceção: quem tem permissions['admin'] (Acesso Administrativo Total) vê tudo
+    # Não mostrar não-atribuídas: evita que corretor fuja da fila do rodízio.
+    # Gerente é exceção: também vê as não-atribuídas da própria roleta (leads
+    # ainda em qualificação com a IA), senão só enxerga o que já virou
+    # atendimento humano — não dá pra acompanhar o funil da equipe.
+    # Exceção geral: quem tem permissions['admin'] (Acesso Administrativo Total) vê tudo
     if current_user.atendente? && !current_user.has_permission?('admin')
-      base = base.where(user_id: current_user.team_scope_ids)
+      base = if current_user.team_manager?
+        base.where(user_id: current_user.team_scope_ids)
+            .or(base.where(user_id: nil, inbox_id: current_user.team_inbox_ids))
+      else
+        base.where(user_id: current_user.team_scope_ids)
+      end
     end
 
     conversations = base

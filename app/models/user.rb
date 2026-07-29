@@ -60,4 +60,14 @@ class User < ApplicationRecord
 
     account.users.where(round_robin_group_id: round_robin_group_id).pluck(:id)
   end
+
+  # Inboxes (números de WhatsApp/canais) vinculados à roleta do gerente —
+  # usado pra ele enxergar conversas da própria equipe ainda não atribuídas
+  # a ninguém (lead em qualificação com a IA), não só as já em atendimento
+  # humano. Vazio se não for gerente ou não tiver roleta definida.
+  def team_inbox_ids
+    return [] unless team_manager? && round_robin_group_id.present?
+
+    account.inboxes.where(round_robin_group_id: round_robin_group_id).pluck(:id)
+  end
 end

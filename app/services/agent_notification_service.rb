@@ -21,7 +21,13 @@ class AgentNotificationService
 
     # Notificação vai sempre pro celular do corretor via WhatsApp, independente
     # do canal de onde veio o lead (ex: conversa do Instagram não tem "telefone").
-    inbox = @conversation.account.inboxes.find_by(provider: 'baileys')
+    # Preferir o inbox da PRÓPRIA conversa (mesmo número/roleta do corretor) —
+    # contas com duas roletas (dois gerentes, dois números Baileys) mandavam
+    # a notificação sempre pelo primeiro inbox Baileys da conta (find_by sem
+    # ordenação), então o corretor da roleta 2 recebia a notificação vindo do
+    # número da roleta 1. Só cai pra "qualquer inbox Baileys da conta" quando
+    # a conversa em si não tem inbox Baileys (ex: lead veio pelo Instagram).
+    inbox = @conversation.inbox&.provider == 'baileys' ? @conversation.inbox : @conversation.account.inboxes.find_by(provider: 'baileys')
     return unless inbox.present?
 
     baileys = WhatsappBaileysService.new(inbox)
