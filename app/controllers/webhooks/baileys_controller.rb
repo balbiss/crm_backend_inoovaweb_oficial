@@ -2,6 +2,33 @@ module Webhooks
   class BaileysController < ApplicationController
     skip_before_action :verify_authenticity_token, raise: false
 
+    # Únicos tipos de mensagem que o baileys-api de fato sabe baixar (ver
+    # downloadMediaFromMessages.ts do fork) -- usado como lista positiva em vez
+    # de "qualquer chave que termine em Message", que pegava também mensagens
+    # de protocolo sem conteúdo nenhum (ver NON_CONTENT_PROTOCOL_KEYS abaixo).
+    DOWNLOADABLE_MEDIA_TYPES = %w[
+      imageMessage videoMessage audioMessage documentMessage
+      documentWithCaptionMessage stickerMessage
+    ].freeze
+
+    # Mensagens de protocolo do WhatsApp que não têm NENHUM conteúdo pro
+    # cliente ver -- ex: "protocolMessage" tipo EPHEMERAL_SYNC_RESPONSE
+    # (sincronização de "mensagens temporárias"), disparado repetidamente todo
+    # santo dia, sem nenhuma relação com o cliente enviar ou não um arquivo de
+    # verdade. Achado real (2026-07-31, contas 12/15/24): toda vez que a IA
+    # respondia, chegava 1-3s depois um "messages.upsert" só com
+    # "protocolMessage"/"messageContextInfo" -- a chave "protocolMessage"
+    # termina em "Message", batia no detector antigo de mídia, tentava baixar
+    # um "anexo" que nunca existiu e criava "📎 Arquivo não pôde ser baixado"
+    # pro cliente ver no CRM. 657 ocorrências no staging (mais que o dobro dos
+    # 577 anexos reais recebidos com sucesso no mesmo período) -- não é
+    # instabilidade de conexão do Baileys (bug antigo, ver RetryMediaDownloadJob),
+    # é um tipo de evento inteiro sendo mal interpretado.
+    NON_CONTENT_PROTOCOL_KEYS = %w[
+      protocolMessage senderKeyDistributionMessage reactionMessage
+      pollUpdateMessage messageContextInfo
+    ].freeze
+
     def create
       # The baileys-api webhook payload typically contains events
       event = params[:event]
@@ -184,6 +211,20 @@ module Webhooks
 
         Rails.logger.info("Incoming MSG Payload: #{msg.to_json}")
 
+        # Sem texto real, sem legenda de anúncio e sem mídia baixável: se as
+        # únicas chaves do "message" forem protocolo puro (ver
+        # NON_CONTENT_PROTOCOL_KEYS acima), não é o cliente enviando nada --
+        # ignora igual ao stub tratado mais acima, em vez de criar uma
+        # mensagem falsa de "arquivo".
+        if text.blank?
+          msg_keys = (msg[:message] || msg['message'] || {}).keys.map(&:to_s)
+          has_downloadable_media = msg_keys.any? { |k| DOWNLOADABLE_MEDIA_TYPES.include?(k) }
+          if msg_keys.present? && !has_downloadable_media && (msg_keys - NON_CONTENT_PROTOCOL_KEYS).empty?
+            Rails.logger.info("Ignorando mensagem sem conteúdo real (só protocolo: #{msg_keys}) pra #{remote_jid}")
+            next
+          end
+        end
+
         next if Message.exists?(source_id: source_id)
 
         # Usa a conta do próprio inbox (evita fallback para Account.first errado)
@@ -256,7 +297,7 @@ module Webhooks
         end
 
         msg_obj = msg[:message] || msg['message'] || {}
-        media_type_key = msg_obj.keys.find { |k| k.to_s.end_with?('Message') && k.to_s != 'extendedTextMessage' }
+        media_type_key = msg_obj.keys.find { |k| DOWNLOADABLE_MEDIA_TYPES.include?(k.to_s) }
         
         if media_type_key
           media_info = msg_obj[media_type_key]
