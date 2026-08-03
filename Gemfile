@@ -36,7 +36,7 @@ gem "image_processing", "~> 1.2"
 gem "rack-cors"
 
 # Use Redis adapter for Action Cable
-gem "redis", "~> 5.0"
+gem "redis", "~> 6.0"
 
 # Authentication and SaaS
 gem "devise"
