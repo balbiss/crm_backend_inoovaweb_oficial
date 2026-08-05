@@ -379,7 +379,19 @@ class AiAssistantService
   # foi encaminhada por nenhum caminho (nem 'com_atendente', nem
   # 'route_to_department'), aplica 'com_atendente' de verdade — mesmo efeito
   # de a IA ter chamado a ferramenta.
-  TRANSFER_INTENT_PATTERN = /vou\s+te\s+(encaminhar|direcionar|transferir|passar)|vou\s+(encaminhar|direcionar|transferir|passar)\s+(voc[eê]|sua)|vai\s+continuar\s+a\s+conversa\s+com\s+voc[eê]/i
+  # Antes exigia "vou te <verbo>" ou "vou <verbo> você/sua" logo em seguida --
+  # variações reais da IA como "Vou JÁ direcionar SEU atendimento..." (advérbio
+  # entre "vou" e o verbo, e "seu" masculino em vez de "sua") não batiam,
+  # deixando passar despromovido exatamente o caso que essa trava existe pra
+  # cobrir (achado real: conta Amil, contato "Elem" #2316 -- mesma frase da
+  # conta "Guilherme" #2317 que funcionou, só que ali a IA chamou a ferramenta
+  # sozinha; sem isso o texto idêntico "Vou já direcionar seu atendimento"
+  # ficava sem nenhum caminho de aplicação). Agora tolera até 3 palavras de
+  # preenchimento entre "vou" e o verbo, e não exige mais o pronome depois.
+  # \w não cobre acentos em Ruby por padrão ("já" quebrava (?:\w+\s+) no meio
+  # do "á") -- usa \S (qualquer não-espaço) pra aceitar advérbio acentuado
+  # entre "vou" e o verbo sem essa armadilha.
+  TRANSFER_INTENT_PATTERN = /vou\s+(?:\S+\s+){0,3}(encaminhar|direcionar|transferir|passar)\b|vai\s+continuar\s+a\s+conversa\s+com\s+voc[eê]/i
 
   def enforce_transfer_promise(text)
     return text if text.blank?
