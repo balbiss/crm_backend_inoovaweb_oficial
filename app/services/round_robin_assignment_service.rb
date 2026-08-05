@@ -8,7 +8,7 @@ class RoundRobinAssignmentService
 
     ApplicationRecord.transaction do
       account = conversation.account.lock!
-      group_id = conversation.inbox&.round_robin_group_id || group_id_from_purpose(account, conversation.contact)
+      group_id = conversation.inbox&.round_robin_group_id || group_id_from_purpose(account, conversation)
 
       base_scope = User.where(account_id: account.id, status: 'active', department: 'corretor')
       base_scope = base_scope.where(round_robin_group_id: group_id) if group_id.present?
@@ -66,8 +66,27 @@ class RoundRobinAssignmentService
   # Imobiliários, um WhatsApp só recebendo os dois tipos de lead, mas com
   # roletas "VENDAS" e "LOCAÇÃO" separadas -- sem isso, o lead podia cair
   # com um corretor de locação forçado a atender venda (ou vice-versa).
-  def self.group_id_from_purpose(account, contact)
+  def self.group_id_from_purpose(account, conversation)
+    contact = conversation.contact
     purpose = contact&.custom_attributes&.dig('purpose')
+
+    # 'purpose' só existe se a IA chamou 'qualify_lead' antes de transferir --
+    # como isso depende de tool_choice:auto (probabilístico, mesma classe de
+    # problema já resolvida pra 'com_atendente' via trava determinística),
+    # às vezes a IA promete/transfere sem nunca ter chamado 'qualify_lead'.
+    # Sem esse fallback o lead cai sem filtro de grupo nenhum (primeiro da
+    # fila entre AS DUAS equipes), o que na prática sempre caía na roleta de
+    # VENDAS (achado real: conta Amil, grupo VENDAS com mais gente na fila
+    # do que LOCAÇÃO). Último recurso: procura palavra-chave óbvia de
+    # locação/venda direto no que o próprio lead escreveu.
+    if purpose.blank?
+      lead_text = conversation.messages.where(sender_type: 'Contact').pluck(:text).join(' ')
+      purpose = if lead_text.match?(/alug|loca[çc][aã]o|\blocar\b/i)
+        'locacao'
+      elsif lead_text.match?(/\bcomprar\b|\bcompra\b|\bvenda\b|\bfinanciar\b/i)
+        'compra'
+      end
+    end
     return nil if purpose.blank?
 
     pattern = purpose == 'locacao' ? /loca/i : /venda|compra/i

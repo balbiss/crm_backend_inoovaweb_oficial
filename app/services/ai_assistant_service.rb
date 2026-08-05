@@ -194,7 +194,7 @@ class AiAssistantService
             intention: { type: "string", description: "Descrição detalhada do que o cliente quer (ex: Busca apartamento de 2 quartos na Cidade Nova, até R$ 500 mil)." },
             purpose: { type: "string", enum: ["compra", "locacao"], description: "Se o cliente busca comprar ou alugar um imóvel — preencha assim que ficar claro na conversa, mesmo que 'intention' ainda esteja incompleto. Usado pra transferir o lead pro corretor certo (equipe de vendas ou de locação)." }
           },
-          required: ["temperature", "intention"]
+          required: ["temperature", "intention", "purpose"]
         }
       }
     }
