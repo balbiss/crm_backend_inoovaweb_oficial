@@ -30,6 +30,14 @@ class MessagesController < ApplicationController
         rescue StandardError => e
           Rails.logger.error("Failed to send message via #{conversation.inbox.provider}: #{e.message}")
         end
+
+        # Corretor respondeu manualmente pelo CRM -- pausa a IA na hora, sem
+        # depender do eco de "fromMe" vindo do webhook do canal (Baileys às
+        # vezes não confirma a pausa a tempo pra contatos com identidade
+        # @lid, deixando a IA responder de novo por cima do humano já
+        # atendendo -- achado real: conversa reaberta pela IA se
+        # reapresentando 40min depois do corretor já ter assumido).
+        pause_ai_for_human_reply(conversation)
       end
 
       # Optionally render just the new message, but we can also just return success
@@ -48,6 +56,26 @@ class MessagesController < ApplicationController
   end
 
   private
+
+  def pause_ai_for_human_reply(conversation)
+    return unless conversation.inbox&.ai_enabled
+
+    jid = conversation.contact.channel_identifier
+    return unless jid
+
+    Rails.cache.write("ai_paused_#{conversation.inbox_id}_#{jid}", Time.current.to_i)
+
+    tag = conversation.account.tags.find_or_create_by!(name: 'agente_off') { |t| t.color = '#f97316' }
+    conversation.tags << tag unless conversation.tags.include?(tag)
+
+    ActionCable.server.broadcast("conversations_channel_#{conversation.account_id}", {
+      event: 'conversation_tags_updated',
+      conversation_id: conversation.id,
+      tags: conversation.reload.tags.map { |t| { id: t.id, name: t.name, color: t.color } }
+    })
+  rescue => e
+    Rails.logger.error("Erro ao pausar IA após resposta manual do corretor: #{e.message}")
+  end
 
   # O gravador de áudio do navegador (MediaRecorder) produz webm/opus, mp4/aac
   # ou similar dependendo do navegador -- nenhum é o ogg/opus que o WhatsApp
