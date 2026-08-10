@@ -55,6 +55,22 @@ class RoundRobinAssignmentService
     nil
   end
 
+  # Público: usado pela IA pra saber se precisa perguntar "compra ou locação"
+  # ANTES de prometer a transferência, quando a conta tem roletas separadas
+  # por finalidade numa mesma inbox e ainda não há nenhum sinal (nem
+  # 'qualify_lead', nem palavra-chave no que o lead escreveu) de qual das
+  # duas equipes é a certa -- sem essa pergunta, group_id_from_purpose cai
+  # pro pool sem filtro (as duas equipes juntas) e o lead pode cair com o
+  # corretor errado (achado real: conta Amil, conversas #2378 e #2500, ambas
+  # transferidas na primeira resposta da IA, antes de qualquer sinal de
+  # compra/locação existir, e caindo por sorte/azar numa equipe ou outra).
+  def self.ambiguous_pending_purpose?(conversation)
+    return false if conversation.user_id.present?
+    return false if conversation.inbox&.round_robin_group_id.present?
+    return false if conversation.account.round_robin_groups.count < 2
+    group_id_from_purpose(conversation.account, conversation).nil?
+  end
+
   private
 
   # Contas que atendem venda e locação pelo MESMO número de WhatsApp não

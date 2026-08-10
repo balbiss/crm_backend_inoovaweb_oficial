@@ -398,6 +398,14 @@ class AiAssistantService
     return text unless text.match?(TRANSFER_INTENT_PATTERN)
     return text if @conversation.reload.user_id.present? || @conversation.tags.exists?(name: 'com_atendente')
 
+    # Mesma trava do 'apply_label' (ver ali) -- se o texto já promete a
+    # transferência mas ainda não dá pra saber compra/locação, não manda essa
+    # promessa (seria mentira, a transferência não vai acontecer de verdade)
+    # -- substitui pela pergunta que faltou fazer antes de prometer.
+    if RoundRobinAssignmentService.ambiguous_pending_purpose?(@conversation)
+      return "Antes de te encaminhar, só uma pergunta rápida: você está buscando comprar ou alugar um imóvel?"
+    end
+
     execute_tool('apply_label', {
       'label'  => 'com_atendente',
       'reason' => 'Transferência prometida no texto ao cliente, aplicada automaticamente (a IA não chamou a ferramenta nesta resposta).'
@@ -534,6 +542,19 @@ class AiAssistantService
 
     when "apply_label"
       label_name = args['label'].to_s.strip.downcase
+
+      # Trava determinística: em contas com roletas separadas por finalidade
+      # (venda/locação) numa mesma inbox, não deixa transferir 'com_atendente'
+      # sem antes saber se o lead quer comprar ou alugar -- sem isso, o
+      # rodízio caía num pool sem filtro (as duas equipes juntas) e o lead
+      # podia cair com o corretor errado (achado real: conta Amil, ver
+      # RoundRobinAssignmentService.ambiguous_pending_purpose?). Devolve a
+      # ferramenta sem efeito nenhum (não aplica tag, não pausa IA, não
+      # transfere) e instrui o modelo a perguntar antes de tentar de novo.
+      if label_name == 'com_atendente' && RoundRobinAssignmentService.ambiguous_pending_purpose?(@conversation)
+        return "AÇÃO NÃO REALIZADA: antes de transferir, você precisa saber se o cliente busca COMPRAR ou ALUGAR o imóvel — esta imobiliária tem equipes separadas para venda e locação, e ainda não está claro qual das duas. Pergunte isso ao cliente primeiro (ex: \"Você está buscando comprar ou alugar?\") e só chame 'apply_label' com 'com_atendente' de novo depois de saber a resposta."
+      end
+
       colors = { 'lead_quente' => '#ef4444', 'lead_frio' => '#3b82f6', 'desqualificado' => '#6b7280', 'com_atendente' => '#8b5cf6', 'visita_agendada' => '#10b981' }
       color = colors[label_name] || '#6b7280'
 
