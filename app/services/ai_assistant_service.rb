@@ -60,19 +60,25 @@ class AiAssistantService
   private
 
   def split_into_messages(text)
-    return [text] if text.length < 80 # Não divide mensagens curtas
-    
+    # Várias imobiliárias reclamaram que a IA manda a resposta "muito
+    # picotada" (respostas curtas/médias virando 3-5 balões separados,
+    # cada um com atraso de "digitando..." antes). Limiar antigo (80
+    # caracteres) mandava quase qualquer resposta com uma frase completa
+    # pro split. Só vale a pena simular "múltiplas mensagens humanas" pra
+    # respostas realmente longas.
+    return [text] if text.length < 220 # Não divide mensagens curtas/médias
+
     prompt = <<~PROMPT
-      Você é um agente que simula o comportamento humano ao enviar mensagens no WhatsApp. 
+      Você é um agente que simula o comportamento humano ao enviar mensagens no WhatsApp.
       Seu objetivo é pegar uma mensagem longa recebida como entrada e dividi-la em múltiplas mensagens menores — sem alterar as palavras do conteúdo original — apenas separando em partes naturais, como um humano faria ao digitar e enviar aos poucos.
-      
+
       REGRAS:
       - Não reescreva o conteúdo. Apenas separe em mensagens menores respeitando a pontuação e pausas naturais.
-      - As divisões devem parecer naturais.
+      - Prefira SEMPRE o menor número de mensagens possível. Só separe quando houver uma pausa natural clara (ex: troca de assunto, uma pergunta ao final) — não separe só porque o texto tem mais de uma frase.
       - Sempre retorne como um JSON com o campo "mensagens" que é um array de strings.
       - Remova vírgulas e pontos finais no final das mensagens, quando soar mais natural para o chat.
-      - Tente manter cada mensagem entre 1 a 4 frases no máximo.
-      - NUNCA QUEBRE A MENSAGEM EM MAIS DE 5 PARTES.
+      - Tente manter cada mensagem entre 2 a 5 frases no máximo.
+      - NUNCA QUEBRE A MENSAGEM EM MAIS DE 3 PARTES.
       - Mantenha itens de lista na mesma mensagem. NUNCA quebre listas em múltiplas mensagens.
     PROMPT
     
@@ -89,10 +95,24 @@ class AiAssistantService
     )
     
     json_str = response.dig("choices", 0, "message", "content")
-    JSON.parse(json_str)["mensagens"] || [text]
+    cap_message_parts(JSON.parse(json_str)["mensagens"] || [text])
   rescue => e
     Rails.logger.error("Erro ao dividir mensagem em blocos: #{e.message}")
     [text]
+  end
+
+  MAX_MESSAGE_PARTS = 3
+
+  # A regra "no máximo 3 partes" no prompt acima é só uma instrução — a LLM
+  # de split às vezes ignora e devolve mais partes mesmo assim (achado real:
+  # várias imobiliárias reclamando de resposta "muito picotada", 5 balões
+  # pra uma saudação + descrição curta de imóvel). Trava determinística:
+  # junta o excedente na última mensagem em vez de confiar só no prompt.
+  def cap_message_parts(messages)
+    return messages if messages.size <= MAX_MESSAGE_PARTS
+    head = messages.first(MAX_MESSAGE_PARTS - 1)
+    tail = messages[(MAX_MESSAGE_PARTS - 1)..].join(' ')
+    head + [tail]
   end
 
   def build_message_history
