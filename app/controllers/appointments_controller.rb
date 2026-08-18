@@ -14,16 +14,13 @@ class AppointmentsController < ApplicationController
       cancelled: scoped.where(status: %w[cancelled cancelado]).count
     }
 
+    # Gerente vê a tabela "por corretor" igual ao dono, mas só da própria
+    # equipe -- mesmo critério de team_scope_ids já usado em index (linha
+    # abaixo) e no resto do app (ver User#team_manager?).
     by_agent = if owner?
-      current_user.account.users.where(role: %w[atendente admin]).map do |agent|
-        agent_scope = scoped.where(user_id: agent.id)
-        {
-          id:    agent.id,
-          name:  "#{agent.first_name} #{agent.last_name}".strip,
-          total: agent_scope.count,
-          done:  agent_scope.where(status: %w[completed realizado]).count
-        }
-      end
+      current_user.account.users.where(role: %w[atendente admin]).map { |agent| agent_report_row(agent, scoped) }
+    elsif current_user.team_manager?
+      current_user.account.users.where(id: current_user.team_scope_ids).map { |agent| agent_report_row(agent, scoped) }
     else
       nil
     end
@@ -42,7 +39,7 @@ class AppointmentsController < ApplicationController
     end
 
     render json: {
-      is_owner:     owner?,
+      is_owner:     owner? || current_user.team_manager?,
       period:       { start: period.first, end: period.last },
       total:        scoped.count,
       by_status:    by_status,
@@ -134,10 +131,28 @@ class AppointmentsController < ApplicationController
       current_user.empresa? || current_user.admin? || current_user.has_permission?('admin')
     end
 
+    def agent_report_row(agent, scoped)
+      agent_scope = scoped.where(user_id: agent.id)
+      {
+        id:    agent.id,
+        name:  "#{agent.first_name} #{agent.last_name}".strip,
+        total: agent_scope.count,
+        done:  agent_scope.where(status: %w[completed realizado]).count
+      }
+    end
+
+    # Gerente enxerga os agendamentos da própria equipe (team_scope_ids),
+    # não só os próprios -- antes caía no fallback "user_id: current_user.id"
+    # igual um corretor comum, escondendo os agendamentos dos outros
+    # corretores da equipe dele (achado real: 8 gerentes reais em produção,
+    # contas DMG Imóveis e Turbo Imóveis SJC, viam "Total: 0" no relatório
+    # de Agendamentos mesmo com agendamentos reais existindo na conta).
     def base_scope
       account = current_user.account
       if owner?
         Appointment.where(account_id: account.id)
+      elsif current_user.team_manager?
+        Appointment.where(account_id: account.id, user_id: current_user.team_scope_ids)
       else
         Appointment.where(account_id: account.id, user_id: current_user.id)
       end

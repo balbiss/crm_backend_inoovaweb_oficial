@@ -1,12 +1,15 @@
 class ReportsController < ApplicationController
   before_action :authenticate_user!
-  # overview e by_tag: todos os usuários (corretor vê o funil geral da conta).
-  # by_agent, performance e export: somente dono — dados sensíveis da equipe.
-  before_action :require_owner!, only: %i[ by_agent performance export ]
+  # overview e by_tag: todos os usuários (corretor vê o funil geral da conta,
+  # gerente vê só o funil da própria equipe -- ver scoped_contacts).
+  # by_agent, performance e export: dono ou gerente (gerente só vê a própria
+  # equipe, nunca as outras -- mesma regra do resto do app, ver
+  # User#team_manager?). Corretor comum continua sem acesso a essas 3.
+  before_action :require_owner_or_team_manager!, only: %i[ by_agent performance export ]
 
   def overview
     period = parse_period
-    contacts = account.contacts.where(created_at: period)
+    contacts = scoped_contacts(account.contacts.where(created_at: period))
 
     render json: {
       period:         { start: period.first, end: period.last },
@@ -29,7 +32,11 @@ class ReportsController < ApplicationController
 
   def by_agent
     period     = parse_period
-    agents     = account.users.where(role: %w[atendente admin]).to_a
+    agents     = if current_user.full_account_access?
+      account.users.where(role: %w[atendente admin]).to_a
+    else
+      account.users.where(role: %w[atendente admin], id: current_user.team_scope_ids).to_a
+    end
     agent_ids  = agents.map(&:id)
     date_range = period.first.to_date..period.last.to_date
 
@@ -70,11 +77,11 @@ class ReportsController < ApplicationController
     tag_ids = tags.map(&:id)
 
     # Batch: 1 query for all tag counts instead of N
-    counts = ConversationTag
+    tag_counts_scope = ConversationTag
       .joins(conversation: :contact)
       .where(tag_id: tag_ids, contacts: { account_id: account.id })
-      .group(:tag_id)
-      .count('DISTINCT contacts.id')
+    tag_counts_scope = tag_counts_scope.where(conversation: { user_id: current_user.team_scope_ids }) if current_user.team_manager?
+    counts = tag_counts_scope.group(:tag_id).count('DISTINCT contacts.id')
 
     data = tags.map do |tag|
       { id: tag.id, name: tag.name, color: tag.color, count: counts[tag.id] || 0 }
@@ -84,18 +91,20 @@ class ReportsController < ApplicationController
   end
 
   def performance
+    conversations = scoped_conversations(account.conversations)
+
     # Tendência de conversas — últimos 7 dias
     conv_trend = (6.days.ago.to_date..Date.current).map do |date|
       range = date.beginning_of_day..date.end_of_day
       {
         date: date.strftime('%d/%m'),
-        opened:   account.conversations.where(created_at: range).count,
-        resolved: account.conversations.where(status: :resolved).where('updated_at BETWEEN ? AND ?', range.first, range.last).count
+        opened:   conversations.where(created_at: range).count,
+        resolved: conversations.where(status: :resolved).where('updated_at BETWEEN ? AND ?', range.first, range.last).count
       }
     end
 
     # Tempo médio de primeiro atendimento (em minutos)
-    sample_convs = account.conversations.includes(:messages).order(created_at: :desc).limit(200)
+    sample_convs = conversations.includes(:messages).order(created_at: :desc).limit(200)
     times = sample_convs.filter_map do |conv|
       msgs = conv.messages.sort_by(&:created_at)
       first_inbound  = msgs.find { |m| m.sender_type == 'Contact' }
@@ -125,7 +134,7 @@ class ReportsController < ApplicationController
 
     case type
     when 'leads'
-      rows = account.contacts.includes(:user).where(created_at: period).order(:created_at)
+      rows = scoped_contacts(account.contacts.includes(:user).where(created_at: period)).order(:created_at)
       csv  = generate_csv(['ID', 'Nome', 'Telefone', 'Email', 'Temperatura', 'Origem', 'Intenção', 'Status', 'Atendente', 'Criado em'],
         rows.map { |c|
           agent = c.user ? "#{c.user.first_name} #{c.user.last_name}".strip : 'Não atribuído'
@@ -147,6 +156,7 @@ class ReportsController < ApplicationController
       contacts = Contact.joins(conversations: :conversation_tags)
         .where(conversation_tags: { tag_id: tag_id }, contacts: { account_id: account.id })
         .distinct
+      contacts = contacts.where(conversations: { user_id: current_user.team_scope_ids }) if current_user.team_manager?
       csv = generate_csv(['Nome', 'Telefone', 'Temperatura', 'Origem'],
         contacts.map { |c| [c.name.presence || "#{c.first_name} #{c.last_name}".strip, c.phone, c.temperature, c.source] })
       filename = "remarketing_#{tag&.name || 'lista'}_#{Date.current}.csv"
@@ -162,6 +172,22 @@ class ReportsController < ApplicationController
 
   def account
     current_user.account
+  end
+
+  # Corretor comum vê o funil geral da conta (decisão de produto já existente,
+  # ver comentário no topo do arquivo) -- só restringe pra gerente, que deve
+  # ver a própria equipe, nunca as outras (mesma regra de privacidade entre
+  # equipes já aplicada em contacts_controller/conversations_controller/etc,
+  # ver User#team_manager?). Sem isso, um gerente que ganhasse acesso às abas
+  # de relatório veria dados de equipes concorrentes dentro da mesma conta.
+  def scoped_contacts(base)
+    return base.where(user_id: current_user.team_scope_ids) if current_user.team_manager?
+    base
+  end
+
+  def scoped_conversations(base)
+    return base.where(user_id: current_user.team_scope_ids) if current_user.team_manager?
+    base
   end
 
   def parse_period
