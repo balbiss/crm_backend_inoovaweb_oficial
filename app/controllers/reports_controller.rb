@@ -40,10 +40,26 @@ class ReportsController < ApplicationController
     agent_ids  = agents.map(&:id)
     date_range = period.first.to_date..period.last.to_date
 
-    # Batch: 6 queries total instead of ~8 per agent
-    leads_count  = account.contacts.where(user_id: agent_ids, created_at: period).group(:user_id).count
-    quentes_count = account.contacts.where(user_id: agent_ids, temperature: %w[quente Quente QUENTE], created_at: period).group(:user_id).count
-    won_count    = account.contacts.where(user_id: agent_ids, status: 'won', created_at: period).group(:user_id).count
+    # Contact.user_id não é o campo usado no fluxo real de atribuição de lead
+    # (fica nil pra quase todo mundo -- achado real: conta DMG Imóveis, 485
+    # de 487 contatos com Contact.user_id nil). Quem carrega o "dono do lead"
+    # de verdade é Conversation.user_id (setado pelo RoundRobinAssignmentService),
+    # mesmo contorno já usado em DashboardController#index. Sem isso,
+    # Leads Recebidos/Quentes/Fechados/Conversão ficavam zerados pra
+    # praticamente todo corretor, mesmo com conversas abertas de verdade.
+    agent_by_contact = account.conversations.where(user_id: agent_ids).pluck(:contact_id, :user_id).to_h
+    contacts_period   = account.contacts.where(id: agent_by_contact.keys, created_at: period).pluck(:id, :temperature, :status)
+
+    leads_count   = Hash.new(0)
+    quentes_count = Hash.new(0)
+    won_count     = Hash.new(0)
+    contacts_period.each do |cid, temp, status|
+      aid = agent_by_contact[cid]
+      leads_count[aid]   += 1
+      quentes_count[aid] += 1 if %w[quente Quente QUENTE].include?(temp)
+      won_count[aid]     += 1 if status == 'won'
+    end
+
     conv_open    = account.conversations.where(user_id: agent_ids, status: :open).group(:user_id).count
     conv_total   = account.conversations.where(user_id: agent_ids).group(:user_id).count
     appt_base    = Appointment.where(account_id: account.id, user_id: agent_ids, appointment_date: date_range)
@@ -180,9 +196,16 @@ class ReportsController < ApplicationController
   # equipes já aplicada em contacts_controller/conversations_controller/etc,
   # ver User#team_manager?). Sem isso, um gerente que ganhasse acesso às abas
   # de relatório veria dados de equipes concorrentes dentro da mesma conta.
+  #
+  # Importante: filtra por Conversation.user_id (via contact_id), NÃO por
+  # Contact.user_id -- esse campo fica nil pra quase todo contato real (ver
+  # comentário em #by_agent), então filtrar direto por ele zerava o "Visão
+  # Geral" de qualquer gerente (achado real: conta DMG, 0 vs 56 contatos
+  # reais da equipe). Mesmo contorno já usado em DashboardController#index.
   def scoped_contacts(base)
-    return base.where(user_id: current_user.team_scope_ids) if current_user.team_manager?
-    base
+    return base unless current_user.team_manager?
+    contact_ids = current_user.account.conversations.where(user_id: current_user.team_scope_ids).pluck(:contact_id).uniq
+    base.where(id: contact_ids)
   end
 
   def scoped_conversations(base)
