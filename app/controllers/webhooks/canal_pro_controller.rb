@@ -130,56 +130,31 @@ module Webhooks
         conversation: { id: conversation.id, status: 'open', source: source_portal }
       })
 
-      # IA via WhatsApp se tiver telefone, AI ativa e conversa nova
+      # IA via WhatsApp se tiver telefone, AI ativa e conversa nova.
+      # Roda num job de verdade (SolidQueue), não numa Thread.new crua --
+      # a Thread não sobrevivia a um redeploy/restart do container no meio
+      # da espera e disputava conexão do pool do Puma com requisições
+      # normais, fazendo a IA "sumir" silenciosamente pra uma fração real
+      # dos leads (achado real: conta Amil, ~40% dos leads recentes do
+      # Canal Pro com telefone válido nunca receberam resposta).
       if inbox.ai_enabled && phone.present? && is_new
         raw_jid = "#{phone.gsub(/\D/, '')}@s.whatsapp.net"
         contact.update_column(:jid, raw_jid) if contact.jid.blank?
 
-        Thread.new do
-          begin
-            sleep 3
-            baileys_service = WhatsappBaileysService.new(inbox)
-            # Se o contato já tinha um jid estabelecido de verdade (contato
-            # antigo, já teve conversa real por qualquer canal), usa ele --
-            # WhatsApp moderno pode identificar o mesmo número por um "@lid"
-            # (identidade de privacidade) diferente do jid "@s.whatsapp.net"
-            # baseado só no telefone. Mandar pro jid errado (mesmo que exista
-            # e passe no /on-whatsapp) faz a mensagem cair numa sessão/thread
-            # diferente da que o WhatsApp real do cliente já usa -- some do
-            # CRM da imobiliária conseguir ver no próprio celular (achado
-            # real: 33 contatos da conta Amil com @lid, resolve_jid sempre
-            # devolvia um jid diferente do estabelecido de verdade).
-            #
-            # Só pra contato genuinamente novo (sem jid nenhum ainda) que cai
-            # no resolve_jid: testa os dois formatos do nono dígito
-            # brasileiro contra o WhatsApp de verdade (via /on-whatsapp) --
-            # sem isso, o envio usava o jid "cru" montado só com os dígitos
-            # do telefone, que pode não bater com o número real registrado.
-            jid = established_jid || baileys_service.resolve_jid(phone) || raw_jid
-            contact.update_column(:jid, jid) if contact.jid != jid
-
-            ai_service = AiAssistantService.new(inbox, conversation, extra_context: build_portal_context(lead, source_portal))
-            ai_response = ai_service.process_message
-            if ai_response.present?
-              Rails.cache.write("ai_is_replying_#{inbox.id}_#{jid}", true, expires_in: 60.seconds)
-              paragraphs = ai_response.is_a?(Array) ? ai_response : ai_response.split("\n\n").reject(&:blank?)
-              paragraphs.each do |para|
-                baileys_id = send_message_with_retry(baileys_service, jid, para.strip)
-                Message.create!(
-                  account:      account,
-                  conversation: conversation,
-                  text:         para.strip,
-                  sender_type:  'User',
-                  sender_id:    nil,
-                  source_id:    baileys_id.presence || "ai_#{SecureRandom.hex(8)}",
-                  status:       baileys_id.present? ? :delivered : :failed
-                )
-              end
-            end
-          rescue => e
-            Rails.logger.error("Portal #{source_portal} AI error: #{e.message}")
-          end
-        end
+        # Se o contato já tinha um jid estabelecido de verdade (contato
+        # antigo, já teve conversa real por qualquer canal), o job usa ele --
+        # WhatsApp moderno pode identificar o mesmo número por um "@lid"
+        # (identidade de privacidade) diferente do jid "@s.whatsapp.net"
+        # baseado só no telefone. Mandar pro jid errado (mesmo que exista
+        # e passe no /on-whatsapp) faz a mensagem cair numa sessão/thread
+        # diferente da que o WhatsApp real do cliente já usa -- some do
+        # CRM da imobiliária conseguir ver no próprio celular (achado
+        # real: 33 contatos da conta Amil com @lid, resolve_jid sempre
+        # devolvia um jid diferente do estabelecido de verdade).
+        AiPortalLeadReplyJob.set(wait: 3.seconds).perform_later(
+          account.id, inbox.id, conversation.id, contact.id,
+          phone, established_jid, raw_jid, build_portal_context(lead, source_portal)
+        )
       end
 
       render json: { status: 'ok', conversation_id: conversation.id, contact_id: contact.id }
@@ -258,26 +233,6 @@ module Webhooks
       parts << "Temperatura indicada pelo portal: #{lead[:temperature]}." if lead[:temperature].present?
       parts << "INSTRUÇÃO: Esta é a primeira mensagem. Se apresente como assistente da imobiliária pelo nome, mencione o imóvel que ele perguntou e pergunte se deseja mais informações ou quer agendar uma visita."
       parts.join(" ")
-    end
-
-    # Retry curto pra cobrir instabilidade conhecida da conexão Baileys (stream
-    # errors 503/515, reconexão automática do protocolo multi-device -- mesma
-    # causa raiz já documentada no retry de download de mídia). O Baileys pode
-    # aceitar o envio e devolver um id válido mesmo se a mensagem se perder no
-    # meio da reconexão, então isso não cobre 100% dos casos -- só reduz a
-    # janela de perda em falhas de HTTP diretas (timeout, 5xx da API).
-    def send_message_with_retry(baileys_service, jid, text)
-      [0, 5, 15].each do |wait_seconds|
-        sleep wait_seconds if wait_seconds.positive?
-        begin
-          baileys_id = baileys_service.send_message(jid, text)
-          return baileys_id if baileys_id.present?
-        rescue => e
-          Rails.logger.warn("send_message_with_retry: tentativa falhou (#{e.message})")
-        end
-      end
-      Rails.logger.error("send_message_with_retry: desistiu após 3 tentativas, jid=#{jid}")
-      nil
     end
 
     def build_lead_note(lead)
