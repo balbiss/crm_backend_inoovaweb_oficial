@@ -31,60 +31,8 @@ class ReportsController < ApplicationController
   end
 
   def by_agent
-    period     = parse_period
-    agents     = if current_user.full_account_access?
-      account.users.where(role: %w[atendente admin]).to_a
-    else
-      account.users.where(role: %w[atendente admin], id: current_user.team_scope_ids).to_a
-    end
-    agent_ids  = agents.map(&:id)
-    date_range = period.first.to_date..period.last.to_date
-
-    # Contact.user_id não é o campo usado no fluxo real de atribuição de lead
-    # (fica nil pra quase todo mundo -- achado real: conta DMG Imóveis, 485
-    # de 487 contatos com Contact.user_id nil). Quem carrega o "dono do lead"
-    # de verdade é Conversation.user_id (setado pelo RoundRobinAssignmentService),
-    # mesmo contorno já usado em DashboardController#index. Sem isso,
-    # Leads Recebidos/Quentes/Fechados/Conversão ficavam zerados pra
-    # praticamente todo corretor, mesmo com conversas abertas de verdade.
-    agent_by_contact = account.conversations.where(user_id: agent_ids).pluck(:contact_id, :user_id).to_h
-    contacts_period   = account.contacts.where(id: agent_by_contact.keys, created_at: period).pluck(:id, :temperature, :status)
-
-    leads_count   = Hash.new(0)
-    quentes_count = Hash.new(0)
-    won_count     = Hash.new(0)
-    contacts_period.each do |cid, temp, status|
-      aid = agent_by_contact[cid]
-      leads_count[aid]   += 1
-      quentes_count[aid] += 1 if %w[quente Quente QUENTE].include?(temp)
-      won_count[aid]     += 1 if status == 'won'
-    end
-
-    conv_open    = account.conversations.where(user_id: agent_ids, status: :open).group(:user_id).count
-    conv_total   = account.conversations.where(user_id: agent_ids).group(:user_id).count
-    appt_base    = Appointment.where(account_id: account.id, user_id: agent_ids, appointment_date: date_range)
-    appt_total   = appt_base.group(:user_id).count
-    appt_done    = appt_base.where(status: 'completed').group(:user_id).count
-
-    data = agents.map do |agent|
-      id = agent.id
-      lc = leads_count[id] || 0
-      wc = won_count[id]   || 0
-      {
-        id:                  id,
-        name:                "#{agent.first_name} #{agent.last_name}".strip,
-        email:               agent.email,
-        leads_received:      lc,
-        quentes:             quentes_count[id] || 0,
-        visits_scheduled:    appt_total[id]    || 0,
-        visits_done:         appt_done[id]     || 0,
-        won:                 wc,
-        open_conversations:  conv_open[id]     || 0,
-        total_conversations: conv_total[id]    || 0,
-        conversion_rate:     lc > 0 ? (wc.to_f / lc * 100).round(1) : 0
-      }
-    end
-
+    period = parse_period
+    data   = by_agent_data(period)
     render json: { period: { start: period.first, end: period.last }, agents: data }
   end
 
@@ -161,9 +109,9 @@ class ReportsController < ApplicationController
       filename = "leads_#{Date.current}.csv"
 
     when 'agents'
-      by_agent_data = JSON.parse(render_to_string(action: :by_agent))['agents'] rescue []
+      rows = by_agent_data(period)
       csv = generate_csv(['Nome', 'Email', 'Leads Recebidos', 'Quentes', 'Visitas Agendadas', 'Visitas Realizadas', 'Fechados', 'Taxa Conversão (%)'],
-        by_agent_data.map { |a| [a['name'], a['email'], a['leads_received'], a['quentes'], a['visits_scheduled'], a['visits_done'], a['won'], a['conversion_rate']] })
+        rows.map { |a| [a[:name], a[:email], a[:leads_received], a[:quentes], a[:visits_scheduled], a[:visits_done], a[:won], a[:conversion_rate]] })
       filename = "corretores_#{Date.current}.csv"
 
     when 'remarketing'
@@ -211,6 +159,69 @@ class ReportsController < ApplicationController
   def scoped_conversations(base)
     return base.where(user_id: current_user.team_scope_ids) if current_user.team_manager?
     base
+  end
+
+  # Usado por #by_agent (JSON) e pelo export type=agents -- extraído pra
+  # método reutilizável porque `render_to_string(action: :by_agent)` não
+  # funciona pra reaproveitar a lógica: essa action nunca renderiza uma
+  # view/template, ela só faz `render json:` direto no método, então o
+  # render_to_string levantava ActionView::MissingTemplate (engolido pelo
+  # `rescue []` do export) e a aba "Por Corretor" sempre baixava vazia,
+  # mesmo com dados reais (confirmado ao vivo em staging: JSON tinha
+  # corretores com leads, CSV vinha só com o cabeçalho).
+  def by_agent_data(period)
+    agents     = if current_user.full_account_access?
+      account.users.where(role: %w[atendente admin]).to_a
+    else
+      account.users.where(role: %w[atendente admin], id: current_user.team_scope_ids).to_a
+    end
+    agent_ids  = agents.map(&:id)
+    date_range = period.first.to_date..period.last.to_date
+
+    # Contact.user_id não é o campo usado no fluxo real de atribuição de lead
+    # (fica nil pra quase todo mundo -- achado real: conta DMG Imóveis, 485
+    # de 487 contatos com Contact.user_id nil). Quem carrega o "dono do lead"
+    # de verdade é Conversation.user_id (setado pelo RoundRobinAssignmentService),
+    # mesmo contorno já usado em DashboardController#index. Sem isso,
+    # Leads Recebidos/Quentes/Fechados/Conversão ficavam zerados pra
+    # praticamente todo corretor, mesmo com conversas abertas de verdade.
+    agent_by_contact = account.conversations.where(user_id: agent_ids).pluck(:contact_id, :user_id).to_h
+    contacts_period   = account.contacts.where(id: agent_by_contact.keys, created_at: period).pluck(:id, :temperature, :status)
+
+    leads_count   = Hash.new(0)
+    quentes_count = Hash.new(0)
+    won_count     = Hash.new(0)
+    contacts_period.each do |cid, temp, status|
+      aid = agent_by_contact[cid]
+      leads_count[aid]   += 1
+      quentes_count[aid] += 1 if %w[quente Quente QUENTE].include?(temp)
+      won_count[aid]     += 1 if status == 'won'
+    end
+
+    conv_open    = account.conversations.where(user_id: agent_ids, status: :open).group(:user_id).count
+    conv_total   = account.conversations.where(user_id: agent_ids).group(:user_id).count
+    appt_base    = Appointment.where(account_id: account.id, user_id: agent_ids, appointment_date: date_range)
+    appt_total   = appt_base.group(:user_id).count
+    appt_done    = appt_base.where(status: 'completed').group(:user_id).count
+
+    agents.map do |agent|
+      id = agent.id
+      lc = leads_count[id] || 0
+      wc = won_count[id]   || 0
+      {
+        id:                  id,
+        name:                "#{agent.first_name} #{agent.last_name}".strip,
+        email:               agent.email,
+        leads_received:      lc,
+        quentes:             quentes_count[id] || 0,
+        visits_scheduled:    appt_total[id]    || 0,
+        visits_done:         appt_done[id]     || 0,
+        won:                 wc,
+        open_conversations:  conv_open[id]     || 0,
+        total_conversations: conv_total[id]    || 0,
+        conversion_rate:     lc > 0 ? (wc.to_f / lc * 100).round(1) : 0
+      }
+    end
   end
 
   def parse_period
