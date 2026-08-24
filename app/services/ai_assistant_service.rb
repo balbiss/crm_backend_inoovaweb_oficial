@@ -43,9 +43,13 @@ class AiAssistantService
     }
 
     # 3. Enviar para a OpenAI com Tools
+    # gpt-4o-mini pra resposta inicial (mais barato, ainda enxerga imagem) --
+    # só sobe pra gpt-4o quando a IA de fato encadeia uma ferramenta (ver
+    # handle_response), onde o raciocínio sobre o resultado da ferramenta se
+    # beneficia mais do modelo cheio.
     response = @client.chat(
       parameters: {
-        model: "gpt-4o",
+        model: "gpt-4o-mini",
         messages: [system_prompt] + messages,
         temperature: @inbox.ai_temperature || 0.7,
         tools: defined_tools,
