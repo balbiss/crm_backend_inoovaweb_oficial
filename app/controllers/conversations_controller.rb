@@ -23,12 +23,33 @@ class ConversationsController < ApplicationController
       end
     end
 
+    users_hash = current_user.account.users.index_by(&:id)
+
+    # lite=1: lista sem as mensagens (só a prévia da última) — o front pagina
+    # até carregar TODAS as conversas e busca as mensagens via #show ao abrir.
+    # Sem isso, contas grandes só viam as 100 mais recentes na tela.
+    if params[:lite].present?
+      conversations = base
+        .includes(:user, :tags, contact: { notes: :user })
+        .order(last_activity_at: :desc)
+        .offset((page - 1) * limit).limit(limit)
+        .to_a
+
+      last_messages = Message
+        .where(conversation_id: conversations.map(&:id))
+        .select('DISTINCT ON (conversation_id) conversation_id, text, created_at')
+        .order('conversation_id, created_at DESC')
+        .index_by(&:conversation_id)
+
+      render json: conversations.map { |conv| format_conversation(conv, users_hash, lite_last_message: last_messages[conv.id] || :none) }
+      return
+    end
+
     conversations = base
       .includes(:user, :tags, messages: { attachment_attachment: :blob }, contact: { notes: :user })
       .order(last_activity_at: :desc)
       .offset((page - 1) * limit).limit(limit)
 
-    users_hash = current_user.account.users.index_by(&:id)
     render json: conversations.map { |conv| format_conversation(conv, users_hash) }
   end
 
@@ -247,10 +268,11 @@ class ConversationsController < ApplicationController
     params.require(:conversation).permit(:status, :user_id, :snoozed_until)
   end
 
-  def format_conversation(conv, users_hash = {})
+  def format_conversation(conv, users_hash = {}, lite_last_message: nil)
+    lite = !lite_last_message.nil?
     # Sort in memory — avoids N+1 from .order() on eager-loaded association
-    sorted_messages = conv.messages.sort_by(&:created_at)
-    last_message = sorted_messages.last
+    sorted_messages = lite ? [] : conv.messages.sort_by(&:created_at)
+    last_message = lite ? (lite_last_message == :none ? nil : lite_last_message) : sorted_messages.last
     sorted_notes = conv.contact.notes.sort_by { |n| -n.created_at.to_i }
 
     {
@@ -296,6 +318,7 @@ class ConversationsController < ApplicationController
       preview: last_message&.text || 'Nova Conversa',
       timestamp: last_message ? last_message.created_at.strftime('%H:%M') : conv.created_at.strftime('%H:%M'),
       unread: conv.unread_count,
+      messages_loaded: !lite,
       messages: sorted_messages.map do |msg|
         sender_type = msg.sender_type.downcase
         {
