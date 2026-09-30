@@ -53,7 +53,7 @@ class AiAssistantService
       }
     )
 
-    text = handle_response(response, messages)
+    text = MessagePlaceholders.fill(handle_response(response, messages), @conversation.contact)
     text.present? ? split_into_messages(text) : []
   end
 
@@ -109,10 +109,27 @@ class AiAssistantService
   # pra uma saudação + descrição curta de imóvel). Trava determinística:
   # junta o excedente na última mensagem em vez de confiar só no prompt.
   def cap_message_parts(messages)
+    messages = drop_repeated_parts(messages)
     return messages if messages.size <= MAX_MESSAGE_PARTS
     head = messages.first(MAX_MESSAGE_PARTS - 1)
     tail = messages[(MAX_MESSAGE_PARTS - 1)..].join(' ')
     head + [tail]
+  end
+
+  # A LLM de split às vezes devolve a mesma frase duas vezes, só mudando a
+  # pontuação (achado real: conta DMG, conversa #6554 -- "O financiamento pode
+  # cobrir mais de 80%..." chegou duplicado pro lead). Descarta a parte que
+  # repete (ou está contida em) uma parte já mantida.
+  def drop_repeated_parts(messages)
+    kept = []
+    messages.each do |msg|
+      key = msg.to_s.downcase.gsub(/[^[:alnum:]]+/, '')
+      next if key.empty?
+      next if kept.any? { |k| k[:key] == key || (key.length >= 20 && k[:key].include?(key)) }
+
+      kept << { key: key, text: msg }
+    end
+    kept.map { |k| k[:text] }
   end
 
   def build_message_history
@@ -194,9 +211,33 @@ class AiAssistantService
       prompt += "\n[QUALIFICAÇÃO]: Sempre que entender o que o cliente procura, use a ferramenta 'qualify_lead'."
     end
 
+    prompt += catalog_instruction
+    prompt += tool_names_instruction
     prompt += mandatory_transfer_instruction
 
     prompt
+  end
+
+  # Canal preso a empreendimentos específicos (ex: um WhatsApp por cidade):
+  # a IA precisa saber o que existe no catálogo dela pra não oferecer nem
+  # mandar foto de produto de outro canal.
+  def catalog_instruction
+    matcher = ListingMatcher.new(@inbox, @conversation.account_id)
+    return '' unless matcher.restricted?
+
+    items = matcher.available_summary(15)
+    if items.empty?
+      "\n[CATÁLOGO DESTE CANAL]: Nenhum imóvel ou empreendimento está liberado para este canal no CRM. Não envie fotos nem apresente imóveis — se o cliente pedir, diga que um corretor vai passar essas informações e siga o restante das suas instruções."
+    else
+      "\n[CATÁLOGO DESTE CANAL]: Este canal só pode apresentar e enviar fotos destes itens do CRM: #{items.join('; ')}. Nunca apresente nem envie fotos de nada fora dessa lista. Ao chamar 'send_property_photos' ou 'create_appointment', informe o ID e o listing_type exatos do item que o cliente pediu."
+    end
+  end
+
+  # Prompts de conta citam ferramentas com nomes que não existem no sistema
+  # (achado real: DMG Imóveis manda chamar 'qualificar_lead' com
+  # 'nivel_qualificacao') — sem esse mapa a IA às vezes simplesmente não chama nada.
+  def tool_names_instruction
+    "\n[NOMES DAS FERRAMENTAS]: Se as instruções acima mencionarem ferramentas com outros nomes, use as equivalentes reais: 'qualificar_lead' (ou qualificar/classificar o lead) = 'qualify_lead' e, para 'lead_quente'/'lead_frio', 'apply_label'; transferir/passar para corretor ou humano = 'apply_label' com 'com_atendente'; enviar fotos = 'send_property_photos'; buscar/consultar imóveis no CRM = 'search_properties'; agendar visita = 'create_appointment'."
   end
 
   def defined_tools
@@ -240,11 +281,12 @@ class AiAssistantService
       type: "function",
       function: {
         name: "create_appointment",
-        description: "Agenda uma visita para o lead em um imóvel avulso OU condomínio/lançamento. Use o ID numérico retornado por search_properties (funciona para os dois tipos).",
+        description: "Agenda uma visita para o lead em um imóvel avulso OU condomínio/lançamento. Use o ID numérico e o listing_type retornados por search_properties.",
         parameters: {
           type: "object",
           properties: {
-            property_id: { type: "integer", description: "ID numérico do imóvel ou condomínio (retornado por search_properties como 'ID X:')" },
+            property_id: { type: "integer", description: "ID numérico do imóvel ou condomínio (retornado por search_properties como 'ID X')" },
+            listing_type: { type: "string", enum: ["imovel", "condominio"], description: "Tipo do item, exatamente como retornado por search_properties (imóvel avulso e condomínio podem ter o mesmo número de ID)." },
             date: { type: "string", description: "Data desejada no formato YYYY-MM-DD (ex: 2026-06-19)" },
             time: { type: "string", description: "Hora desejada no formato HH:MM (ex: 10:00). Sempre informe o horário combinado com o cliente." }
           },
@@ -257,12 +299,13 @@ class AiAssistantService
       type: "function",
       function: {
         name: "send_property_photos",
-        description: "Envia as fotos de um imóvel ou condomínio para o cliente no WhatsApp. Se você não souber o ID, informe 'name' com o nome do imóvel/condomínio (ex: nome mencionado na conversa) que a busca é feita automaticamente. NUNCA diga que não tem fotos sem antes tentar esta ferramenta.",
+        description: "Envia as fotos de um imóvel ou condomínio para o cliente no WhatsApp. Informe sempre 'name' com o nome exato do que o cliente pediu (inclua cidade, fase, bloco etc. se ele citou) e, se souber, 'property_id' + 'listing_type'. Se o resultado disser que não encontrou ou que há mais de uma opção, NÃO diga que enviou — confirme com o cliente qual ele quer. NUNCA diga que não tem fotos sem antes tentar esta ferramenta.",
         parameters: {
           type: "object",
           properties: {
             property_id: { type: "integer", description: "ID do imóvel ou condomínio, se já conhecido (retornado por search_properties)." },
-            name: { type: "string", description: "Nome do imóvel ou condomínio, usado quando o ID não é conhecido." }
+            listing_type: { type: "string", enum: ["imovel", "condominio"], description: "Tipo do item, exatamente como retornado por search_properties." },
+            name: { type: "string", description: "Nome do imóvel/condomínio que o cliente pediu, com os detalhes que ele citou (cidade, fase etc.)." }
           }
         }
       }
@@ -440,34 +483,32 @@ class AiAssistantService
 
     case name
     when "search_properties"
-      # Busca por nome via palavra-chave em vez de frase exata: mesmo raciocínio
-      # do send_property_photos (a IA raramente repete o nome cadastrado ao pé
-      # da letra, então bater a frase inteira falhava na maioria das vezes).
-      name_words = args['name'].present? ? args['name'].to_s.split(/\s+/).reject { |w| w.length <= 2 } : []
+      # Só o catálogo liberado pra este canal (ver ListingMatcher). Com nome, os
+      # resultados vêm ordenados por aderência ao nome pedido — antes vinham os
+      # 3 primeiros que batessem QUALQUER palavra, sem ordem, e o item certo
+      # podia nem aparecer.
+      matcher = ListingMatcher.new(@inbox, account_id)
 
       # Busca em Imóveis Avulsos (Properties) — apenas disponíveis
-      prop_query = Property.where(account_id: account_id, status: 'Disponível')
+      prop_query = matcher.properties.where(status: 'Disponível')
       prop_query = prop_query.where("neighborhood ILIKE ?", "%#{args['neighborhood']}%") if args['neighborhood'].present?
       prop_query = prop_query.where("bedrooms >= ?", args['bedrooms']) if args['bedrooms'].present?
       prop_query = prop_query.where("price <= ?", args['max_price']) if args['max_price'].present?
-      if name_words.any?
-        prop_conditions = name_words.map { '(title ILIKE ? OR condo_name ILIKE ?)' }.join(' OR ')
-        prop_values = name_words.flat_map { |w| ["%#{w}%", "%#{w}%"] }
-        prop_query = prop_query.where(prop_conditions, *prop_values)
-      end
-      prop_results = prop_query.limit(3)
-      prop_results.each { |p| p.increment!(:search_count) rescue nil }
 
-      # Busca em Condomínios (Condominia) — exclui esgotados
-      condo_query = Condominium.where(account_id: account_id).where.not(status: 'Esgotado')
+      # Busca em Condomínios (Condominia) — exclui esgotados. where.not sozinho
+      # também descartaria status NULL (condomínio sem status preenchido).
+      condo_query = matcher.condominiums.where("status IS NULL OR status <> 'Esgotado'")
       condo_query = condo_query.where("neighborhood ILIKE ?", "%#{args['neighborhood']}%") if args['neighborhood'].present?
       condo_query = condo_query.where("min_price <= ?", args['max_price']) if args['max_price'].present?
-      if name_words.any?
-        condo_conditions = name_words.map { 'name ILIKE ?' }.join(' OR ')
-        condo_values = name_words.map { |w| "%#{w}%" }
-        condo_query = condo_query.where(condo_conditions, *condo_values)
+
+      if ListingMatcher.tokens(args['name']).any?
+        prop_results = matcher.rank(prop_query.limit(500).to_a, args['name']).first(3).map(&:record)
+        condo_results = matcher.rank(condo_query.to_a, args['name']).first(3).map(&:record)
+      else
+        prop_results = prop_query.limit(3).to_a
+        condo_results = condo_query.limit(3).to_a
       end
-      condo_results = condo_query.limit(3)
+      prop_results.each { |p| p.increment!(:search_count) rescue nil }
 
       if prop_results.empty? && condo_results.empty?
         "Nenhum imóvel disponível encontrado com esses critérios."
@@ -477,7 +518,7 @@ class AiAssistantService
           response_texts << "Imóveis Avulsos:"
           response_texts += prop_results.map do |p|
             has_photos = p.photos.attached?
-            desc = "- ID #{p.id}: #{p.title || p.property_type || 'Imóvel'} em #{p.neighborhood}, #{p.city}. "
+            desc = "- ID #{p.id} (listing_type 'imovel'): #{p.title || p.property_type || 'Imóvel'} em #{p.neighborhood}, #{p.city}. "
             desc += "Status: #{p.status || 'Disponível'}. "
             desc += "Quartos: #{p.bedrooms || 0} (Suítes: #{p.suites || 0}). Banheiros: #{p.bathrooms || 0}. Vagas: #{p.parking_spots || 0}. "
             desc += "Área: #{p.built_area || p.total_area}m². "
@@ -492,7 +533,7 @@ class AiAssistantService
           response_texts << "Condomínios/Lançamentos:"
           response_texts += condo_results.map do |c|
             has_photos = c.photos.attached?
-            desc = "- ID #{c.id}: #{c.name}, em #{c.neighborhood}, #{c.city}/#{c.state}. "
+            desc = "- ID #{c.id} (listing_type 'condominio'): #{c.name}, em #{c.neighborhood}, #{c.city}/#{c.state}. "
             desc += "Endereço: #{c.street}, #{c.number}. " if c.street.present?
             desc += "Status comercial: #{c.status || 'Disponível'}. "
             desc += "Progresso da obra: #{c.construction_progress}. " if c.construction_progress.present?
@@ -525,9 +566,14 @@ class AiAssistantService
         '11:00'
       end
 
-      listing_id = args['property_id']
-      property = Property.find_by(id: listing_id, account_id: account_id)
-      condo = property.nil? ? Condominium.find_by(id: listing_id, account_id: account_id) : nil
+      # Imóvel avulso e condomínio são tabelas separadas e podem ter o mesmo ID
+      # — antes o imóvel sempre ganhava e a visita ia pro lugar errado.
+      found = ListingMatcher.new(@inbox, account_id).find_by_id(args['property_id'], args['listing_type'])
+      if found.size > 1
+        return "AÇÃO NÃO REALIZADA: o ID #{args['property_id']} existe como imóvel avulso e como condomínio (#{found.map { |r| ListingMatcher.describe(r) }.join(' e ')}). Chame 'create_appointment' de novo informando o listing_type correto."
+      end
+      property = found.find { |r| r.is_a?(Property) }
+      condo = found.find { |r| r.is_a?(Condominium) }
 
       Appointment.create!(
         account_id: account_id,
@@ -678,35 +724,9 @@ class AiAssistantService
       "O status do cliente foi atualizado para #{args['stage']} no CRM."
       
     when "send_property_photos"
-      property = nil
-      if args['property_id'].present?
-        property = Property.find_by(id: args['property_id'], account_id: account_id) ||
-                   Condominium.find_by(id: args['property_id'], account_id: account_id)
-      end
-      if property.nil? && args['name'].present?
-        # Busca por palavra-chave em vez de frase exata: a IA raramente repete o
-        # título cadastrado ao pé da letra ("apartamento do centro" vs "Apartamento
-        # 3 quartos - Centro"), então bater a frase inteira falha na maioria das vezes.
-        words = args['name'].to_s.split(/\s+/).reject { |w| w.length <= 2 }
-        if words.any?
-          prop_conditions = words.map { '(title ILIKE ? OR condo_name ILIKE ?)' }.join(' OR ')
-          prop_values = words.flat_map { |w| ["%#{w}%", "%#{w}%"] }
-          property = Property.where(account_id: account_id).where(prop_conditions, *prop_values).first
+      property, problem = resolve_photo_listing(args, account_id)
+      return problem if problem
 
-          if property.nil?
-            condo_conditions = words.map { 'name ILIKE ?' }.join(' OR ')
-            condo_values = words.map { |w| "%#{w}%" }
-            property = Condominium.where(account_id: account_id).where(condo_conditions, *condo_values).first
-          end
-        end
-      end
-      if property.nil? && args['name'].blank? && args['property_id'].blank?
-        # Fallback só quando o cliente pergunta sem citar nome/ID nenhum ("Tem foto?").
-        # Se citou um nome (mesmo que não bata por variação de grafia) e não achou,
-        # é melhor dizer que não encontrou do que arriscar mandar a foto errada.
-        active_condos = Condominium.where(account_id: account_id).where.not(status: 'Esgotado')
-        property = active_condos.first if active_condos.count == 1
-      end
       if property
         if property.photos.attached?
           # Envia as fotos em background para não travar a resposta principal da IA
@@ -749,9 +769,11 @@ class AiAssistantService
               Rails.logger.error("Erro ao enviar fotos do imóvel: #{e.message}")
             end
           end
-          "Fotos do imóvel enviadas com sucesso para o cliente."
+          # Diz À IA o que foi enviado de fato — antes era só "enviadas com
+          # sucesso" e ela afirmava pro lead que eram fotos de outro produto.
+          "Fotos de '#{ListingMatcher.label(property).strip}' enviadas com sucesso para o cliente (#{[property.photos.count, 5].min} fotos). Ao comentar com o cliente, refira-se a elas por esse nome."
         else
-          "O imóvel não possui fotos cadastradas no sistema."
+          "'#{ListingMatcher.label(property).strip}' não possui fotos cadastradas no sistema. Nenhuma foto foi enviada — não envie fotos de outro imóvel/empreendimento no lugar."
         end
       else
         "Imóvel não encontrado."
@@ -762,6 +784,62 @@ class AiAssistantService
     end
   rescue => e
     "Erro ao executar a ferramenta: #{e.message}"
+  end
+
+  # Decide de qual imóvel/condomínio mandar fotos. Devolve [registro, nil] ou
+  # [nil, mensagem pra IA]. Na dúvida não manda nada: foto do produto errado é
+  # pior do que perguntar pro cliente qual ele quer (ver ListingMatcher).
+  def resolve_photo_listing(args, account_id)
+    matcher = ListingMatcher.new(@inbox, account_id)
+    name = args['name'].to_s.strip
+    by_name = ListingMatcher.tokens(name).any? ? matcher.find_by_name(name) : nil
+
+    if args['property_id'].present?
+      found = matcher.find_by_id(args['property_id'], args['listing_type'])
+      found = [by_name.record] if found.size > 1 && by_name&.record && found.include?(by_name.record)
+
+      if found.size > 1
+        return [nil, "NENHUMA FOTO ENVIADA: o ID #{args['property_id']} existe como #{found.map { |r| ListingMatcher.describe(r) }.join(' e como ')}. Chame de novo informando o listing_type correto."]
+      elsif found.size == 1
+        record = found.first
+        # A IA às vezes passa o ID de um item e o nome de outro — se o nome
+        # pedido corresponde por completo a OUTRO item, não arrisca.
+        if by_name&.status == :found && by_name.record != record
+          return [nil, "NENHUMA FOTO ENVIADA: o ID #{args['property_id']} é #{ListingMatcher.describe(record)}, mas o nome pedido ('#{name}') corresponde a #{ListingMatcher.describe(by_name.record)}. Confira qual o cliente pediu e chame de novo com o ID certo."]
+        end
+        return [record, nil]
+      end
+      # ID inexistente ou fora do catálogo do canal: segue pela busca por nome.
+    end
+
+    if by_name
+      options = by_name.options.map { |r| ListingMatcher.describe(r) }.join('; ')
+      case by_name.status
+      when :found
+        return [by_name.record, nil]
+      when :ambiguous
+        if matcher.rank(by_name.options, name).first&.full
+          return [nil, "NENHUMA FOTO ENVIADA: '#{name}' corresponde a mais de uma opção: #{options}. Pergunte ao cliente qual delas ele quer e chame de novo com o ID e o listing_type."]
+        end
+        return [nil, "NENHUMA FOTO ENVIADA: nenhum cadastro corresponde exatamente a '#{name}'. Os mais parecidos são: #{options}. Não envie fotos de outro produto, fase ou cidade no lugar — se nenhum desses for o que o cliente pediu, diga que vai confirmar com o corretor."]
+      when :partial
+        return [nil, "NENHUMA FOTO ENVIADA: nenhum cadastro corresponde exatamente a '#{name}'. O mais parecido é #{ListingMatcher.describe(by_name.record)}, mas ele não bate com tudo o que foi pedido. Se o cliente pediu OUTRA fase, cidade ou produto, não envie nada no lugar — diga que vai confirmar com o corretor. Se ele claramente se referiu a esse mesmo item (a diferença é só um detalhe da descrição, ex: 'casa modelo', 'decorado'), chame de novo com property_id #{by_name.record.id} e listing_type '#{ListingMatcher.type_key(by_name.record)}'."]
+      end
+    end
+
+    if by_name.nil? && args['property_id'].blank?
+      # Fallback só quando o cliente pergunta sem citar nada ("Tem foto?") e o
+      # canal só tem um empreendimento ativo — aí não há o que confundir.
+      active_condos = matcher.condominiums.where("status IS NULL OR status <> 'Esgotado'")
+      return [active_condos.first, nil] if active_condos.count == 1
+    end
+
+    available = matcher.available_summary
+    if available.empty?
+      [nil, "NENHUMA FOTO ENVIADA: não há imóveis/empreendimentos liberados para este canal no CRM. Diga ao cliente que um corretor vai enviar essas informações."]
+    else
+      [nil, "NENHUMA FOTO ENVIADA: não encontrei '#{name.presence || args['property_id']}' entre os itens deste canal. Itens disponíveis: #{available.join('; ')}. Se o que o cliente pediu não estiver nessa lista, não envie fotos de outro item — diga que vai confirmar com o corretor."]
+    end
   end
 
   def pause_ai_permanently

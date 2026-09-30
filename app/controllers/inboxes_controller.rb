@@ -156,6 +156,6 @@ class InboxesController < ApplicationController
     end
 
     def inbox_params
-      params.require(:inbox).permit(:name, :provider, :phone_number, :api_url, :api_key, :bot_prompt, :ai_enabled, :ai_name, :ai_prompt, :ai_temperature, :working_hours_enabled, :out_of_office_message, :followup_enabled, :followup_max_attempts, :followup_wait_time_minutes, :followup_send_closing_message, :followup_closing_message, :round_robin_group_id, working_hours: [:day, :open, :start, :end])
+      params.require(:inbox).permit(:name, :provider, :phone_number, :api_url, :api_key, :bot_prompt, :ai_enabled, :ai_name, :ai_prompt, :ai_temperature, :working_hours_enabled, :out_of_office_message, :followup_enabled, :followup_max_attempts, :followup_wait_time_minutes, :followup_send_closing_message, :followup_closing_message, :round_robin_group_id, :ai_listing_scope, :ai_include_properties, working_hours: [:day, :open, :start, :end], ai_condominium_ids: [])
     end
 end

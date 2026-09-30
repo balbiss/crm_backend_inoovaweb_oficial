@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_07_11_120001) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_30_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -230,7 +230,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_07_11_120001) do
 
   create_table "inboxes", force: :cascade do |t|
     t.bigint "account_id"
+    t.integer "ai_condominium_ids", default: [], null: false, array: true
     t.boolean "ai_enabled", default: false
+    t.boolean "ai_include_properties", default: true, null: false
+    t.string "ai_listing_scope", default: "all", null: false
     t.string "ai_name"
     t.text "ai_prompt"
     t.float "ai_temperature", default: 0.7

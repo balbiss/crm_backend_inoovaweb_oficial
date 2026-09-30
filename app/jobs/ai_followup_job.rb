@@ -21,7 +21,16 @@ class AiFollowupJob < ApplicationJob
     # limite de espera. Uma vez transferida pra um corretor, o resgate
     # automático deixa de fazer sentido -- vira responsabilidade humana.
     inbox.conversations.where(status: :open, user_id: nil).where("last_activity_at < ?", threshold_time).find_each do |conversation|
-      
+      # IA desligada nessa conversa (lead já transferido/pausado): o resgate
+      # automático não pode puxar assunto no lugar do corretor. Achado real
+      # (DMG, conversa #7603): IA disse "vou te passar pro corretor", a
+      # atribuição se perdeu e no dia seguinte o follow-up voltou a conversar
+      # com o lead como se nada tivesse acontecido.
+      # (Só a pausa conta: "Retomar IA" tira 'agente_off' mas mantém 'com_atendente'.)
+      next if conversation.tags.where(name: 'agente_off').exists?
+      next if Rails.cache.read("ai_paused_#{inbox.id}_#{conversation.contact.channel_identifier}")
+
+
       # Se a última mensagem foi do lead, o bot q demorou pra responder, não é caso de follow-up.
       # Só damos follow-up quando nós (User/Bot) falamos por último e o lead deixou no vácuo.
       last_message = conversation.messages.order(created_at: :asc).last
@@ -49,6 +58,8 @@ class AiFollowupJob < ApplicationJob
     end
 
     base_prompt = inbox.ai_prompt || "Você é a inteligência artificial da imobiliária."
+    first_name = MessagePlaceholders.first_name(conversation.contact)
+    name_info = first_name ? "O primeiro nome do cliente é #{first_name}." : "O nome do cliente não é conhecido — não use nome nenhum."
 
     system_prompt = <<~PROMPT
       #{base_prompt}
@@ -61,6 +72,7 @@ class AiFollowupJob < ApplicationJob
       Seja super sutil, direta e amigável. Pergunte se ficou alguma dúvida, se ele pensou melhor ou se quer retomar de onde pararam.
       NUNCA mande um textão longo. NUNCA se apresente de novo como se fosse a primeira vez.
       Aja como se vocês estivessem conversando e ele simplesmente esqueceu de responder a última mensagem.
+      #{name_info} Nunca escreva marcadores de modelo como "[Nome]" — se o prompt acima tiver modelos de mensagem com [Nome], troque pelo nome real ou omita.
       RETORNE APENAS O TEXTO DA MENSAGEM E MAIS NADA.
     PROMPT
 
@@ -73,7 +85,7 @@ class AiFollowupJob < ApplicationJob
         }
       )
       
-      followup_text = response.dig("choices", 0, "message", "content")
+      followup_text = MessagePlaceholders.fill(response.dig("choices", 0, "message", "content"), conversation.contact)
       
       if followup_text.present?
         # Enviar via Baileys

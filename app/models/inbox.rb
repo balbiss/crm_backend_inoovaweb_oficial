@@ -6,6 +6,9 @@ class Inbox < ApplicationRecord
   has_many :users, through: :inbox_members, dependent: :destroy
 
   validate :followup_not_allowed_for_instagram
+  validates :ai_listing_scope, inclusion: { in: %w[all selected] }
+
+  before_validation { self.ai_condominium_ids = Array(ai_condominium_ids).compact_blank.map(&:to_i).uniq }
 
   def messaging_service
     case provider
