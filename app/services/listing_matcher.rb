@@ -18,7 +18,11 @@ class ListingMatcher
     imovel imoveis casa casas apartamento apartamentos apto aptos sobrado sobrados
     condominio condominios residencial residenciais empreendimento empreendimentos
     lancamento lancamentos predio predios edificio unidade unidades
+    cod codigo ref referencia
   ].to_set.freeze
+
+  # Palavras que o lead/anúncio põe na frente do código ("Cód. 1274", "Ref AP0001").
+  CODE_PREFIXES = %w[cod codigo ref referencia imovel].to_set.freeze
 
   Match = Struct.new(:record, :matched, :matched_in_name, :full, keyword_init: true)
   Result = Struct.new(:status, :record, :options, keyword_init: true) # :found, :ambiguous, :partial, :not_found
@@ -32,6 +36,12 @@ class ListingMatcher
 
   def self.tokens(text)
     normalize(text).split.select { |w| w.match?(/\A\d+\z/) || (w.length >= 3 && !GENERIC_WORDS.include?(w)) }.uniq
+  end
+
+  # "Cód. 1274" -> "1274", "AP-0001" -> "ap0001": compara código sem caixa,
+  # pontuação nem o prefixo que vem na mensagem do anúncio.
+  def self.code_key(text)
+    normalize(text).split.reject { |w| CODE_PREFIXES.include?(w) }.join
   end
 
   def self.type_key(record)
@@ -82,7 +92,20 @@ class ListingMatcher
     end.sort_by { |m| [-m.matched, -m.matched_in_name] }
   end
 
+  # Código do imóvel avulso (o mesmo do site/anúncio da imobiliária). Achado
+  # real (Sonho Meu Imóveis): leads de anúncio chegam com "Cód 1274" e a IA
+  # não tinha como buscar por código.
+  def find_by_code(code)
+    key = self.class.code_key(code)
+    return nil if key.blank?
+
+    properties.where.not(code: [nil, '']).find { |p| self.class.code_key(p.code) == key }
+  end
+
   def find_by_name(name)
+    if (by_code = find_by_code(name))
+      return Result.new(status: :found, record: by_code, options: [])
+    end
     return Result.new(status: :not_found, options: []) if self.class.tokens(name).empty?
 
     candidates = condominiums.to_a + properties.limit(500).to_a
@@ -124,7 +147,7 @@ class ListingMatcher
   private
 
   def name_fields(record)
-    [record.try(:name), record.try(:title), record.try(:condo_name)].compact.join(' ')
+    [record.try(:name), record.try(:title), record.try(:condo_name), record.try(:code)].compact.join(' ')
   end
 
   def location_fields(record)

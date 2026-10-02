@@ -264,10 +264,11 @@ class AiAssistantService
       type: "function",
       function: {
         name: "search_properties",
-        description: "Pesquisa imóveis e condomínios/lançamentos no banco de dados da imobiliária com base em critérios. Use 'name' sempre que o cliente mencionar um nome específico de condomínio/empreendimento/imóvel (ex: 'Di Cavalcanti').",
+        description: "Pesquisa imóveis e condomínios/lançamentos no banco de dados da imobiliária com base em critérios. Use 'code' sempre que o cliente citar o código/referência do imóvel (ex: 'Cód 1274', 'AP0001' — comum em mensagens vindas de anúncio ou do site). Use 'name' sempre que o cliente mencionar um nome específico de condomínio/empreendimento/imóvel (ex: 'Di Cavalcanti').",
         parameters: {
           type: "object",
           properties: {
+            code: { type: "string", description: "Código/referência do imóvel citado pelo cliente, como ele escreveu (ex: '1274', 'AP0001')." },
             name: { type: "string", description: "Nome do condomínio, empreendimento ou imóvel mencionado pelo cliente (busca parcial)." },
             neighborhood: { type: "string", description: "Bairro desejado" },
             bedrooms: { type: "integer", description: "Número de quartos" },
@@ -305,7 +306,7 @@ class AiAssistantService
           properties: {
             property_id: { type: "integer", description: "ID do imóvel ou condomínio, se já conhecido (retornado por search_properties)." },
             listing_type: { type: "string", enum: ["imovel", "condominio"], description: "Tipo do item, exatamente como retornado por search_properties." },
-            name: { type: "string", description: "Nome do imóvel/condomínio que o cliente pediu, com os detalhes que ele citou (cidade, fase etc.)." }
+            name: { type: "string", description: "Nome do imóvel/condomínio que o cliente pediu, com os detalhes que ele citou (cidade, fase etc.) — ou o código do imóvel, se ele citou um (ex: 'Cód 1274')." }
           }
         }
       }
@@ -489,6 +490,16 @@ class AiAssistantService
       # podia nem aparecer.
       matcher = ListingMatcher.new(@inbox, account_id)
 
+      if ListingMatcher.code_key(args['code']).present?
+        by_code = matcher.find_by_code(args['code'])
+        unless by_code
+          return "Nenhum imóvel com o código '#{args['code']}' está cadastrado no CRM. NÃO diga ao cliente que o código está errado nem que o imóvel não existe — diga que vai confirmar os detalhes desse imóvel com a equipe, pergunte o que chamou a atenção dele (região, valor, quartos) e, se ele quiser falar com alguém, transfira para um corretor."
+        end
+        if by_code.status.present? && by_code.status != 'Disponível'
+          return "O imóvel de código '#{by_code.code}' (#{ListingMatcher.describe(by_code)}) está com status '#{by_code.status}' — não está disponível. Avise o cliente com gentileza e ofereça opções parecidas."
+        end
+      end
+
       # Busca em Imóveis Avulsos (Properties) — apenas disponíveis
       prop_query = matcher.properties.where(status: 'Disponível')
       prop_query = prop_query.where("neighborhood ILIKE ?", "%#{args['neighborhood']}%") if args['neighborhood'].present?
@@ -501,7 +512,10 @@ class AiAssistantService
       condo_query = condo_query.where("neighborhood ILIKE ?", "%#{args['neighborhood']}%") if args['neighborhood'].present?
       condo_query = condo_query.where("min_price <= ?", args['max_price']) if args['max_price'].present?
 
-      if ListingMatcher.tokens(args['name']).any?
+      if by_code
+        prop_results = [by_code]
+        condo_results = []
+      elsif ListingMatcher.tokens(args['name']).any?
         prop_results = matcher.rank(prop_query.limit(500).to_a, args['name']).first(3).map(&:record)
         condo_results = matcher.rank(condo_query.to_a, args['name']).first(3).map(&:record)
       else
@@ -519,6 +533,8 @@ class AiAssistantService
           response_texts += prop_results.map do |p|
             has_photos = p.photos.attached?
             desc = "- ID #{p.id} (listing_type 'imovel'): #{p.title || p.property_type || 'Imóvel'} em #{p.neighborhood}, #{p.city}. "
+            desc += "Código: #{p.code}. " if p.code.present?
+            desc += "Condomínio: #{p.condo_name}. " if p.condo_name.present?
             desc += "Status: #{p.status || 'Disponível'}. "
             desc += "Quartos: #{p.bedrooms || 0} (Suítes: #{p.suites || 0}). Banheiros: #{p.bathrooms || 0}. Vagas: #{p.parking_spots || 0}. "
             desc += "Área: #{p.built_area || p.total_area}m². "
