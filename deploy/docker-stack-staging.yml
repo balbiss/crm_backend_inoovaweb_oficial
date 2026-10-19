@@ -88,7 +88,14 @@ services:
     command:
       - sh
       - "-c"
-      - "bun manage-api-keys create user staging2026 && bun start"
+      # Espera o Redis antes de registrar a chave; se o registro travar/falhar
+      # (ex.: chave já existe), sobe a API mesmo assim. Antes era "&&": em
+      # 16/10/2026 o Redis não resolvia no boot, o comando travou e o bun start
+      # nunca rodou (WhatsApp de todas as contas fora do ar por 3 dias).
+      - >-
+        until nc -z -w2 redis 6379; do echo "aguardando redis..."; sleep 2; done;
+        timeout 60 bun manage-api-keys create user staging2026 || echo "manage-api-keys falhou, seguindo";
+        exec bun start
     environment:
       - NODE_ENV=production
       - PORT=3025
